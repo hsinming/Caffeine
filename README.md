@@ -9,13 +9,25 @@ A lightweight AutoHotkey v2 script that prevents Windows from sleeping or turnin
 
 ## Usage
 
-Double-click `caffeine.ahk`, or run it from the command line:
+### Run as script
+
+Double-click `caffeine.ahk`, or run from the command line:
 
 ```
 AutoHotkey.exe caffeine.ahk
 ```
 
-The script starts immediately and runs silently in the system tray. To stop it, right-click the tray icon and select **Stop & Exit**. Power management is restored automatically on exit.
+The script starts immediately and runs in the system tray. To stop it, right-click the tray icon and select **Stop & Exit**. Power management is restored automatically on exit.
+
+### Compile to executable
+
+Run the build script:
+
+```
+.\build.ps1
+```
+
+This compiles `caffeine.ahk` into `Caffeine.exe` using Ahk2Exe. The `.ico` file and version metadata are embedded automatically via compiler directives.
 
 ## How It Works
 
