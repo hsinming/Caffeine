@@ -17,5 +17,7 @@ Desktop.ini
 
 # Tools
 .claude/
+.opencode/
 opencode.json
 CLAUDE.md
+AGENTS.md
