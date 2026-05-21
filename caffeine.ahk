@@ -1,11 +1,13 @@
-﻿;@Ahk2Exe-SetMainIcon    %A_ScriptDir%\app.ico
+﻿#Requires AutoHotkey v2.0
+#SingleInstance Force
+
+;@Ahk2Exe-SetMainIcon    %A_ScriptDir%\app.ico
+;@Ahk2Exe-AddResource %A_ScriptDir%\on.ico, 206
+;@Ahk2Exe-AddResource %A_ScriptDir%\off.ico, 207
 ;@Ahk2Exe-SetProductName Caffeine
 ;@Ahk2Exe-SetDescription  Prevents Windows from sleeping or turning off the display
-;@Ahk2Exe-SetVersion      1.1.0
+;@Ahk2Exe-SetVersion      1.1.1
 ;@Ahk2Exe-SetCopyright    Copyright 2025
-
-#Requires AutoHotkey v2.0
-#SingleInstance Force
 
 ES_CONTINUOUS       := 0x80000000
 ES_DISPLAY_REQUIRED := 0x00000002
@@ -182,10 +184,19 @@ SetCustomTime(itemName, *) {
 }
 
 UpdateIcon(iconName) {
-    iconPath := A_ScriptDir "\" iconName
-    if FileExist(iconPath) {
-        TraySetIcon(iconPath)
+    if A_IsCompiled {
+        if iconName == "on.ico" {
+            TraySetIcon(A_ScriptFullPath, -206)
+        } else if iconName == "off.ico" {
+            TraySetIcon(A_ScriptFullPath, -207)
+        }
+    } else {
+        iconPath := A_ScriptDir "\" iconName
+        if FileExist(iconPath) {
+            TraySetIcon(iconPath)
+        }
     }
 }
 
 OnExit((*) => Caffeinate(false))
+
