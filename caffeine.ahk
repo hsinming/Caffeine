@@ -1,4 +1,4 @@
-﻿;@Ahk2Exe-SetMainIcon    %A_ScriptDir%\Coffee.ico
+﻿;@Ahk2Exe-SetMainIcon    %A_ScriptDir%\app.ico
 ;@Ahk2Exe-SetProductName Caffeine
 ;@Ahk2Exe-SetDescription  Prevents Windows from sleeping or turning off the display
 ;@Ahk2Exe-SetVersion      1.1.0
@@ -10,8 +10,8 @@
 ES_CONTINUOUS       := 0x80000000
 ES_DISPLAY_REQUIRED := 0x00000002
 
-A_Icon := A_ScriptDir "\Coffee.ico"
-
+UpdateIcon("on.ico")
+IsActive := true
 EndTime := ""
 
 MenuItems := [
@@ -21,7 +21,8 @@ MenuItems := [
     "Active for 3 Hours",
     "Active for 4 Hours",
     "Active for Custom Duration...",
-    "Active till Custom Time..."
+    "Active till Custom Time...",
+    "Inactive"
 ]
 
 ; Set up tray menu
@@ -33,11 +34,13 @@ A_TrayMenu.Add("Active for 3 Hours", (*) => SetHours(3))
 A_TrayMenu.Add("Active for 4 Hours", (*) => SetHours(4))
 A_TrayMenu.Add("Active for Custom Duration...", SetCustomDuration)
 A_TrayMenu.Add("Active till Custom Time...", SetCustomTime)
+A_TrayMenu.Add("Inactive", SetInactive)
 A_TrayMenu.Add() ; Separator
 A_TrayMenu.Add("Stop && Exit", (*) => ExitApp())
 
 SetMenuSelection("Active Indefinitely")
 Caffeinate(true)
+UpdateStatus()
 TrayTip("Caffeine", "Sleep prevention enabled", 2)
 
 SetTimer(KeepAwake, 30000)
@@ -68,20 +71,30 @@ SetMenuSelection(activeItem) {
 }
 
 UpdateStatus() {
-    global EndTime
+    global EndTime, IsActive
+    if !IsActive {
+        Caffeinate(false)
+        UpdateIcon("off.ico")
+        A_IconTip := "Caffeine (Inactive)"
+        return
+    }
     if EndTime == "" {
         Caffeinate(true)
+        UpdateIcon("on.ico")
         A_IconTip := "Caffeine (Active Indefinitely)"
     } else {
         remaining_seconds := DateDiff(EndTime, A_Now, "Seconds")
         if remaining_seconds <= 0 {
+            IsActive := false
             Caffeinate(false)
             EndTime := ""
-            SetMenuSelection("Active Indefinitely")
-            A_IconTip := "Caffeine (Active Indefinitely)"
+            UpdateIcon("off.ico")
+            SetMenuSelection("Inactive")
+            A_IconTip := "Caffeine (Inactive)"
             TrayTip("Caffeine duration completed. Sleep prevention disabled.", "Caffeine", 1)
         } else {
             Caffeinate(true)
+            UpdateIcon("on.ico")
             remaining_minutes := Ceil(remaining_seconds / 60)
             hours := remaining_minutes // 60
             minutes := Mod(remaining_minutes, 60)
@@ -90,22 +103,32 @@ UpdateStatus() {
     }
 }
 
+SetInactive(itemName, *) {
+    global IsActive, EndTime
+    IsActive := false
+    EndTime := ""
+    SetMenuSelection("Inactive")
+    UpdateStatus()
+}
+
 SetIndefinite(itemName, *) {
-    global EndTime
+    global EndTime, IsActive
+    IsActive := true
     EndTime := ""
     SetMenuSelection("Active Indefinitely")
     UpdateStatus()
 }
 
 SetHours(n) {
-    global EndTime
+    global EndTime, IsActive
+    IsActive := true
     EndTime := DateAdd(A_Now, n, "Hours")
     SetMenuSelection("Active for " n " Hour" (n == 1 ? "" : "s"))
     UpdateStatus()
 }
 
 SetCustomDuration(itemName, *) {
-    global EndTime
+    global EndTime, IsActive
     result := InputBox("Enter duration (hour:minute, e.g. 1:30):", "Custom Duration", "w250 h130")
     if result.Result == "Cancel" {
         return
@@ -125,13 +148,14 @@ SetCustomDuration(itemName, *) {
         return
     }
     total_minutes := hours * 60 + minutes
+    IsActive := true
     EndTime := DateAdd(A_Now, total_minutes, "Minutes")
     SetMenuSelection("Active for Custom Duration...")
     UpdateStatus()
 }
 
 SetCustomTime(itemName, *) {
-    global EndTime
+    global EndTime, IsActive
     result := InputBox("Enter target time (24-hour format, e.g. 17:30):", "Custom Target Time", "w250 h130")
     if result.Result == "Cancel" {
         return
@@ -151,9 +175,17 @@ SetCustomTime(itemName, *) {
     if DateDiff(target_timestamp, A_Now, "Seconds") <= 0 {
         target_timestamp := DateAdd(target_timestamp, 1, "Days")
     }
+    IsActive := true
     EndTime := target_timestamp
     SetMenuSelection("Active till Custom Time...")
     UpdateStatus()
+}
+
+UpdateIcon(iconName) {
+    iconPath := A_ScriptDir "\" iconName
+    if FileExist(iconPath) {
+        TraySetIcon(iconPath)
+    }
 }
 
 OnExit((*) => Caffeinate(false))
