@@ -1,6 +1,6 @@
 # Caffeine (咖啡因)
 
-輕量、簡潔的 Windows 防睡眠工具，讓您的電腦隨時保持清醒！
+輕量、簡潔 Windows 防睡眠工具，讓您的電腦隨時保持清醒！
 
 ---
 
@@ -30,7 +30,7 @@
 3. **切換與設定**：
    * **右鍵點擊**托盤圖示，即可自由選擇保持清醒的時間。
    * 將滑鼠懸停在圖示上，會顯示當前防睡眠剩餘的精確時間。
-   * 想要暫暫停防睡眠，請在右鍵選單點選 **Inactive**。
+   * 想要暫停防睡眠，請在右鍵選單點選 **Inactive**。
    * 想要徹底關閉程式，請點選 **Stop & Exit**。
 
 ### 常見問題 (FAQ)
@@ -75,3 +75,11 @@
   * **A**: Not at all. It temporarily overrides power behaviors in real-time. As soon as you select "Inactive" or exit the program, your Windows sleep and display-off timers return to normal immediately.
 * **Q: Will the app work if the external icon (.ico) files are missing?**
   * **A**: Yes. The main icon is embedded directly inside `Caffeine.exe`. The application features smart fallback guards, meaning it will continue to run flawlessly even if the external `on.ico` and `off.ico` files are moved or deleted.
+
+---
+
+## 特別鳴謝 (Acknowledgements)
+
+本專案的靈感與核心設計深受部落格文章 [Caffeinate Windows](https://den.dev/blog/caffeinate-windows/) 的啟發。特別感謝作者 **Den** 分享了如此實用且棒的思維與設計概念！
+
+This project was inspired by and built upon the wonderful ideas from the blog post: [Caffeinate Windows](https://den.dev/blog/caffeinate-windows/) by **Den**. Special thanks to the author for sharing such a great concept and practical approach!
