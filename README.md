@@ -17,8 +17,8 @@
   * **自訂倒數**：自訂希望清醒的小時與分鐘（例如：1 小時 30 分鐘）。
   * **自訂目標時間**：設定電腦保持清醒直到指定的時刻（例如：下午 17:30）。
 * **直觀的狀態指示燈**：托盤圖示會根據當前狀態變更，一眼就能看出電腦會不會睡著：
-  * 🟢 **啟動中 (Active)**：顯示綠色/啟用圖示（`on.ico`），代表防睡眠正在生效。
-  * 🔴 **停用中 (Inactive)**：顯示紅色/停用圖示（`off.ico`），代表防睡眠已暫停，電腦會恢復正常的省電睡眠設定。
+  * 🔴 **啟動中 (Active)**：顯示裝滿紅色熱咖啡的咖啡杯圖示（`on.ico`），代表防睡眠正在生效（象徵電腦注入咖啡因保持清醒）。
+  * ⚪ **停用中 (Inactive)**：顯示空咖啡杯的黑色輪廓圖示（`off.ico`），代表防睡眠已暫停（象徵電腦沒咖啡了），電腦會恢復正常的省電睡眠設定。
 * **無感暫停 (Inactive 狀態)**：想要暫時讓電腦恢復正常睡眠？免關閉程式，只需在選單點擊 **Inactive** 即可輕鬆暫停防睡眠！
 * **倒數結束自動通知**：當設定的定時時間結束後，程式會自動切換為 Inactive (停用) 狀態，並發出托盤通知提醒您。
 
@@ -54,8 +54,8 @@
   * **Custom Countdown**: Define your own countdown duration (e.g., 1 hour and 30 minutes).
   * **Custom Target Time**: Keep awake until a specific wall-clock time (e.g., 17:30).
 * **Intuitive Visual Feedback**: The system tray icon dynamically changes to reflect the current state:
-  * 🟢 **Active**: Shows the active icon (`on.ico`), indicating sleep prevention is currently active.
-  * 🔴 **Inactive**: Shows the inactive icon (`off.ico`), indicating sleep prevention is paused and Windows will sleep normally.
+  * 🔴 **Active**: Shows the active cup icon (`on.ico`, a coffee cup filled with hot red coffee), indicating sleep prevention is currently active (symbolizing the PC is caffeinated).
+  * ⚪ **Inactive**: Shows the inactive cup icon (`off.ico`, a black outline of an empty coffee cup), indicating sleep prevention is paused and Windows will sleep normally (symbolizing the cup is empty).
 * **Seamless Pausing**: Want to let your computer sleep normally without closing the app? Simply select **Inactive** from the tray menu to pause sleep prevention.
 * **Auto-Notification**: When a timed session expires, Caffeine automatically transitions to the Inactive state and displays a tray tip to let you know.
 
