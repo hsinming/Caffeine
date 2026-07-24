@@ -13,8 +13,7 @@ ES_CONTINUOUS       := 0x80000000
 ES_DISPLAY_REQUIRED := 0x00000002
 
 UpdateIcon("on.ico")
-IsActive := true
-EndTime := ""
+State := CaffeineState()
 
 MenuItems := [
     "Active Indefinitely",
@@ -42,14 +41,70 @@ A_TrayMenu.Add("Stop && Exit", (*) => ExitApp())
 
 SetMenuSelection("Active Indefinitely")
 Caffeinate(true)
-UpdateStatus()
+State.UpdateStatus()
 TrayTip("Caffeine", "Sleep prevention enabled", 2)
 
 SetTimer(KeepAwake, 30000)
 
 KeepAwake() {
-    global EndTime
-    UpdateStatus()
+    global State
+    State.UpdateStatus()
+}
+
+class CaffeineState {
+    IsActive := true
+    EndTime := ""
+
+    ActivateIndefinite() {
+        this.IsActive := true
+        this.EndTime := ""
+    }
+
+    ActivateUntil(timestamp) {
+        this.IsActive := true
+        this.EndTime := timestamp
+    }
+
+    Deactivate() {
+        this.IsActive := false
+        this.EndTime := ""
+    }
+
+    RemainingSeconds() {
+        return DateDiff(this.EndTime, A_Now, "Seconds")
+    }
+
+    UpdateStatus() {
+        if !this.IsActive {
+            Caffeinate(false)
+            UpdateIcon("off.ico")
+            A_IconTip := "Caffeine (Inactive)"
+            return
+        }
+        if this.EndTime == "" {
+            Caffeinate(true)
+            UpdateIcon("on.ico")
+            A_IconTip := "Caffeine (Active Indefinitely)"
+        } else {
+            remaining_seconds := this.RemainingSeconds()
+            if remaining_seconds <= 0 {
+                this.IsActive := false
+                Caffeinate(false)
+                this.EndTime := ""
+                UpdateIcon("off.ico")
+                SetMenuSelection("Inactive")
+                A_IconTip := "Caffeine (Inactive)"
+                TrayTip("Caffeine duration completed. Sleep prevention disabled.", "Caffeine", 1)
+            } else {
+                Caffeinate(true)
+                UpdateIcon("on.ico")
+                remaining_minutes := Ceil(remaining_seconds / 60)
+                hours := remaining_minutes // 60
+                minutes := Mod(remaining_minutes, 60)
+                A_IconTip := "Caffeine (Active - " hours "h " minutes "m remaining)"
+            }
+        }
+    }
 }
 
 Caffeinate(enable) {
@@ -72,65 +127,29 @@ SetMenuSelection(activeItem) {
     }
 }
 
-UpdateStatus() {
-    global EndTime, IsActive
-    if !IsActive {
-        Caffeinate(false)
-        UpdateIcon("off.ico")
-        A_IconTip := "Caffeine (Inactive)"
-        return
-    }
-    if EndTime == "" {
-        Caffeinate(true)
-        UpdateIcon("on.ico")
-        A_IconTip := "Caffeine (Active Indefinitely)"
-    } else {
-        remaining_seconds := DateDiff(EndTime, A_Now, "Seconds")
-        if remaining_seconds <= 0 {
-            IsActive := false
-            Caffeinate(false)
-            EndTime := ""
-            UpdateIcon("off.ico")
-            SetMenuSelection("Inactive")
-            A_IconTip := "Caffeine (Inactive)"
-            TrayTip("Caffeine duration completed. Sleep prevention disabled.", "Caffeine", 1)
-        } else {
-            Caffeinate(true)
-            UpdateIcon("on.ico")
-            remaining_minutes := Ceil(remaining_seconds / 60)
-            hours := remaining_minutes // 60
-            minutes := Mod(remaining_minutes, 60)
-            A_IconTip := "Caffeine (Active - " hours "h " minutes "m remaining)"
-        }
-    }
-}
-
 SetInactive(itemName, *) {
-    global IsActive, EndTime
-    IsActive := false
-    EndTime := ""
+    global State
+    State.Deactivate()
     SetMenuSelection("Inactive")
-    UpdateStatus()
+    State.UpdateStatus()
 }
 
 SetIndefinite(itemName, *) {
-    global EndTime, IsActive
-    IsActive := true
-    EndTime := ""
+    global State
+    State.ActivateIndefinite()
     SetMenuSelection("Active Indefinitely")
-    UpdateStatus()
+    State.UpdateStatus()
 }
 
 SetHours(n) {
-    global EndTime, IsActive
-    IsActive := true
-    EndTime := DateAdd(A_Now, n, "Hours")
+    global State
+    State.ActivateUntil(DateAdd(A_Now, n, "Hours"))
     SetMenuSelection("Active for " n " Hour" (n == 1 ? "" : "s"))
-    UpdateStatus()
+    State.UpdateStatus()
 }
 
 SetCustomDuration(itemName, *) {
-    global EndTime, IsActive
+    global State
     result := InputBox("Enter duration (hour:minute, e.g. 1:30):", "Custom Duration", "w250 h130")
     if result.Result == "Cancel" {
         return
@@ -150,14 +169,13 @@ SetCustomDuration(itemName, *) {
         return
     }
     total_minutes := hours * 60 + minutes
-    IsActive := true
-    EndTime := DateAdd(A_Now, total_minutes, "Minutes")
+    State.ActivateUntil(DateAdd(A_Now, total_minutes, "Minutes"))
     SetMenuSelection("Active for Custom Duration...")
-    UpdateStatus()
+    State.UpdateStatus()
 }
 
 SetCustomTime(itemName, *) {
-    global EndTime, IsActive
+    global State
     result := InputBox("Enter target time (24-hour format, e.g. 17:30):", "Custom Target Time", "w250 h130")
     if result.Result == "Cancel" {
         return
@@ -177,10 +195,9 @@ SetCustomTime(itemName, *) {
     if DateDiff(target_timestamp, A_Now, "Seconds") <= 0 {
         target_timestamp := DateAdd(target_timestamp, 1, "Days")
     }
-    IsActive := true
-    EndTime := target_timestamp
+    State.ActivateUntil(target_timestamp)
     SetMenuSelection("Active till Custom Time...")
-    UpdateStatus()
+    State.UpdateStatus()
 }
 
 UpdateIcon(iconName) {
@@ -199,4 +216,3 @@ UpdateIcon(iconName) {
 }
 
 OnExit((*) => Caffeinate(false))
-
