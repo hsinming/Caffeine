@@ -24,7 +24,7 @@
 
 ### 如何使用？
 1. **啟動程式**：
-   * 雙擊執行 `Caffeine.exe`（或在已安裝 AutoHotkey 的環境下雙擊 `caffeine.ahk` 腳本）。
+   * 雙擊執行 `Caffeine.exe`。
 2. **尋找圖示**：
    * 啟動後，電腦右下角的系統工作列（工作列托盤）會出現 Caffeine 的圖示。
 3. **切換與設定**：
@@ -36,8 +36,6 @@
 ### 常見問題 (FAQ)
 * **Q：這會修改我的 Windows 系統設定嗎？**
   * **A**：完全不會。本程式只在運行且處於「Active」狀態時，暫時阻擋系統進入睡眠。一旦您將其切換為「Inactive」或徹底關閉程式，Windows 就會立刻恢復您原本設定的省電與睡眠模式。
-* **Q：如果我的電腦沒有附帶圖示檔案（.ico），程式還能跑嗎？**
-  * **A**：可以。本程式的主程式圖示已完美嵌入在 `Caffeine.exe` 中，並且內建了自動防護機制。即使外部的狀態圖示（`on.ico`/`off.ico`）不小心被刪除，程式依然能流暢運行，不會發生閃退或報錯。
 
 ---
 
@@ -61,7 +59,7 @@
 
 ### How to Use?
 1. **Launch the App**:
-   * Double-click `Caffeine.exe` (or double-click `caffeine.ahk` if you have AutoHotkey v2 installed).
+   * Double-click `Caffeine.exe`.
 2. **Locate the Icon**:
    * Once launched, look for the Caffeine icon in your system tray (bottom-right of your taskbar).
 3. **Control Status**:
@@ -73,8 +71,6 @@
 ### Frequently Asked Questions (FAQ)
 * **Q: Does this modify my Windows power configurations?**
   * **A**: Not at all. It temporarily overrides power behaviors in real-time. As soon as you select "Inactive" or exit the program, your Windows sleep and display-off timers return to normal immediately.
-* **Q: Will the app work if the external icon (.ico) files are missing?**
-  * **A**: Yes. The main icon is embedded directly inside `Caffeine.exe`. The application features smart fallback guards, meaning it will continue to run flawlessly even if the external `on.ico` and `off.ico` files are moved or deleted.
 
 ---
 
