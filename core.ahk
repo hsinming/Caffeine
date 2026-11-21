@@ -44,3 +44,37 @@ class CaffeineState {
         return {Active: true, Tip: "Caffeine (Active - " hours "h " minutes "m remaining)", Expired: false}
     }
 }
+
+; Parsers return {Time, Error}: a target timestamp, or "" and the message to show the user.
+
+ParseDuration(input, now) {
+    if !RegExMatch(input, "^\s*(\d+):(\d{1,2})\s*$", &match) {
+        return {Time: "", Error: "Invalid format. Please use 'hour:minute' (e.g., 1:30)."}
+    }
+    hours := Integer(match[1])
+    minutes := Integer(match[2])
+    if hours < 0 || minutes < 0 || minutes > 59 {
+        return {Time: "", Error: "Invalid values. Hours must be >= 0, and minutes must be between 0 and 59."}
+    }
+    if hours == 0 && minutes == 0 {
+        return {Time: "", Error: "Duration must be greater than zero."}
+    }
+    return {Time: DateAdd(now, hours * 60 + minutes, "Minutes"), Error: ""}
+}
+
+; A time not after `now` rolls to the next day.
+ParseTargetTime(input, now) {
+    if !RegExMatch(input, "^\s*(\d{1,2}):(\d{2})\s*$", &match) {
+        return {Time: "", Error: "Invalid format. Please use 24-hour format 'HH:MM' (e.g., 17:30)."}
+    }
+    target_hours := Integer(match[1])
+    target_minutes := Integer(match[2])
+    if target_hours < 0 || target_hours > 23 || target_minutes < 0 || target_minutes > 59 {
+        return {Time: "", Error: "Invalid time values. Hours must be 0-23, and minutes must be 0-59."}
+    }
+    target_timestamp := SubStr(now, 1, 8) . Format("{:02d}", target_hours) . Format("{:02d}", target_minutes) . "00"
+    if DateDiff(target_timestamp, now, "Seconds") <= 0 {
+        target_timestamp := DateAdd(target_timestamp, 1, "Days")
+    }
+    return {Time: target_timestamp, Error: ""}
+}
