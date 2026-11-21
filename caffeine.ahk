@@ -108,22 +108,12 @@ SetCustomDuration(itemName, *) {
     if result.Result == "Cancel" {
         return
     }
-    if !RegExMatch(result.Value, "^\s*(\d+):(\d{1,2})\s*$", &match) {
-        MsgBox("Invalid format. Please use 'hour:minute' (e.g., 1:30).", "Error", 0x10)
+    parsed := ParseDuration(result.Value, A_Now)
+    if parsed.Error != "" {
+        MsgBox(parsed.Error, "Error", 0x10)
         return
     }
-    hours := Integer(match[1])
-    minutes := Integer(match[2])
-    if hours < 0 || minutes < 0 || minutes > 59 {
-        MsgBox("Invalid values. Hours must be >= 0, and minutes must be between 0 and 59.", "Error", 0x10)
-        return
-    }
-    if hours == 0 && minutes == 0 {
-        MsgBox("Duration must be greater than zero.", "Error", 0x10)
-        return
-    }
-    total_minutes := hours * 60 + minutes
-    State.ActivateUntil(DateAdd(A_Now, total_minutes, "Minutes"))
+    State.ActivateUntil(parsed.Time)
     SetMenuSelection("Active for Custom Duration...")
     UpdateStatus()
 }
@@ -134,22 +124,12 @@ SetCustomTime(itemName, *) {
     if result.Result == "Cancel" {
         return
     }
-    if !RegExMatch(result.Value, "^\s*(\d{1,2}):(\d{2})\s*$", &match) {
-        MsgBox("Invalid format. Please use 24-hour format 'HH:MM' (e.g., 17:30).", "Error", 0x10)
+    parsed := ParseTargetTime(result.Value, A_Now)
+    if parsed.Error != "" {
+        MsgBox(parsed.Error, "Error", 0x10)
         return
     }
-    target_hours := Integer(match[1])
-    target_minutes := Integer(match[2])
-    if target_hours < 0 || target_hours > 23 || target_minutes < 0 || target_minutes > 59 {
-        MsgBox("Invalid time values. Hours must be 0-23, and minutes must be 0-59.", "Error", 0x10)
-        return
-    }
-    current_date := SubStr(A_Now, 1, 8)
-    target_timestamp := current_date . Format("{:02d}", target_hours) . Format("{:02d}", target_minutes) . "00"
-    if DateDiff(target_timestamp, A_Now, "Seconds") <= 0 {
-        target_timestamp := DateAdd(target_timestamp, 1, "Days")
-    }
-    State.ActivateUntil(target_timestamp)
+    State.ActivateUntil(parsed.Time)
     SetMenuSelection("Active till Custom Time...")
     UpdateStatus()
 }
