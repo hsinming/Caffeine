@@ -17,3 +17,6 @@ Desktop.ini
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Test Result written by test.ps1
+test-result.json
