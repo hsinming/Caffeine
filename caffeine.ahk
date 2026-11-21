@@ -23,8 +23,7 @@ MenuItems := [
     "Active for 2 Hours",
     "Active for 3 Hours",
     "Active for 4 Hours",
-    "Active for Custom Duration...",
-    "Active till Custom Time...",
+    "Active Until...",
     "Inactive"
 ]
 
@@ -35,8 +34,7 @@ A_TrayMenu.Add("Active for 1 Hour", (*) => SetHours(1))
 A_TrayMenu.Add("Active for 2 Hours", (*) => SetHours(2))
 A_TrayMenu.Add("Active for 3 Hours", (*) => SetHours(3))
 A_TrayMenu.Add("Active for 4 Hours", (*) => SetHours(4))
-A_TrayMenu.Add("Active for Custom Duration...", SetCustomDuration)
-A_TrayMenu.Add("Active till Custom Time...", SetCustomTime)
+A_TrayMenu.Add("Active Until...", ShowActiveUntil)
 A_TrayMenu.Add("Inactive", SetInactive)
 A_TrayMenu.Add("Report a Bug", (*) => Run(BugReportUrl()))
 A_TrayMenu.Add() ; Separator
@@ -102,38 +100,55 @@ SetHours(n) {
     UpdateStatus()
 }
 
-SetCustomDuration(itemName, *) {
+; The control changed last sets the End Time on OK: slider = duration from OK, picker = clock time.
+ShowActiveUntil(*) {
     global State
-    result := InputBox("Enter duration (hour:minute, e.g. 1:30):", "Custom Duration", "w250 h130")
-    if result.Result == "Cancel" {
-        return
-    }
-    parsed := ParseDuration(result.Value, A_Now)
-    if parsed.Error != "" {
-        MsgBox(parsed.Error, "Error", 0x10)
-        return
-    }
-    State.ActivateUntil(parsed.Time)
-    SetMenuSelection("Active for Custom Duration...")
-    UpdateStatus()
-}
+    now := A_Now
+    timed := State.IsActive && State.EndTime != ""
+    minutes := timed ? MinutesUntil(FormatTime(State.EndTime, "HH:mm"), now) : 60
+    sel := {Last: timed ? "picker" : "slider"}
 
-SetCustomTime(itemName, *) {
-    global State
-    result := InputBox("Enter target time (24-hour format, e.g. 17:30):", "Custom Target Time", "w250 h130")
-    if result.Result == "Cancel" {
-        return
-    }
-    parsed := ParseTargetTime(result.Value, A_Now)
-    if parsed.Error != "" {
-        MsgBox(parsed.Error, "Error", 0x10)
-        return
-    }
-    State.ActivateUntil(parsed.Time)
-    SetMenuSelection("Active till Custom Time...")
-    UpdateStatus()
-}
+    dlg := Gui("+AlwaysOnTop -MinimizeBox", "Active Until")
+    dlg.AddText(, "Duration:")
+    slider := dlg.AddSlider("w280 Range1-96 TickInterval4", SnapMinutes(minutes) // 15)
+    dlg.AddText("Section", "End Time:")
+    picker := dlg.AddDateTime("ys-3 w70 1", "HH:mm")
+    picker.Value := EndTimeFor(minutes, now)
+    label := dlg.AddText("xm w280", UntilLabel(minutes, now))
+    dlg.AddButton("xm w80 Default", "OK").OnEvent("Click", OnOK)
+    dlg.AddButton("x+10 w80", "Cancel").OnEvent("Click", (*) => dlg.Destroy())
+    dlg.OnEvent("Escape", (*) => dlg.Destroy())
+    dlg.OnEvent("Close", (*) => dlg.Destroy())
+    slider.OnEvent("Change", OnSlider)
+    picker.OnEvent("Change", OnPicker)
+    dlg.Show()
 
+    OnSlider(*) {
+        sel.Last := "slider"
+        m := slider.Value * 15
+        picker.Value := EndTimeFor(m, A_Now)
+        label.Value := UntilLabel(m, A_Now)
+    }
+
+    OnPicker(*) {
+        sel.Last := "picker"
+        m := MinutesUntil(FormatTime(picker.Value, "HH:mm"), A_Now)
+        slider.Value := SnapMinutes(m) // 15
+        label.Value := UntilLabel(m, A_Now)
+    }
+
+    OnOK(*) {
+        if sel.Last == "slider" {
+            endTime := EndTimeFor(slider.Value * 15, A_Now)
+        } else {
+            endTime := ParseTargetTime(FormatTime(picker.Value, "HH:mm"), A_Now).Time
+        }
+        dlg.Destroy()
+        State.ActivateUntil(endTime)
+        SetMenuSelection("Active Until...")
+        UpdateStatus()
+    }
+}
 ; Version and OS strings are URL-safe (digits and dots), so no encoding is needed.
 BugReportUrl() {
     version := A_IsCompiled ? FileGetVersion(A_ScriptFullPath) : "script"

@@ -47,21 +47,25 @@ class CaffeineState {
 
 ; Parsers return {Time, Error}: a target timestamp, or "" and the message to show the user.
 
-ParseDuration(input, now) {
-    if !RegExMatch(input, "^\s*(\d+):(\d{1,2})\s*$", &match) {
-        return {Time: "", Error: "Invalid format. Please use 'hour:minute' (e.g., 1:30)."}
-    }
-    hours := Integer(match[1])
-    minutes := Integer(match[2])
-    if minutes > 59 {
-        return {Time: "", Error: "Invalid values. Hours must be >= 0, and minutes must be between 0 and 59."}
-    }
-    if hours == 0 && minutes == 0 {
-        return {Time: "", Error: "Duration must be greater than zero."}
-    }
-    return {Time: DateAdd(now, hours * 60 + minutes, "Minutes"), Error: ""}
+; Active Until dialog sync math. The slider counts 15-minute steps; durations are in minutes.
+
+EndTimeFor(minutes, now) {
+    return DateAdd(now, minutes, "Minutes")
 }
 
+; `hhmm` is the picker's "HH:mm"; the ParseTargetTime next-day rule keeps it in (0, 24 h].
+MinutesUntil(hhmm, now) {
+    return Ceil(DateDiff(ParseTargetTime(hhmm, now).Time, now, "Seconds") / 60)
+}
+
+; Nearest 15-minute step, within the slider range of 15 min to 24 h.
+SnapMinutes(minutes) {
+    return Min(Max(Round(minutes / 15) * 15, 15), 1440)
+}
+
+UntilLabel(minutes, now) {
+    return minutes // 60 "h " Mod(minutes, 60) "m → until " FormatTime(EndTimeFor(minutes, now), "HH:mm")
+}
 ; A time not after `now` rolls to the next day.
 ParseTargetTime(input, now) {
     if !RegExMatch(input, "^\s*(\d{1,2}):(\d{2})\s*$", &match) {
