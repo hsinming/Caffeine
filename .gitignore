@@ -20,3 +20,6 @@ Desktop.ini
 
 # Test Result written by test.ps1
 test-result.json
+
+# Claude Code agent worktrees
+.claude/worktrees/

@@ -1,8 +1,10 @@
+param([string]$Output) # default: Caffeine.exe next to this script
+
 $ErrorActionPreference = "Stop"
 
 $ScriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Source     = Join-Path $ScriptDir "caffeine.ahk"
-$Output     = Join-Path $ScriptDir "Caffeine.exe"
+if (-not $Output) { $Output = Join-Path $ScriptDir "Caffeine.exe" }
 
 $Ahk2Exe = @(
     (Join-Path $env:LocalAppData "Programs\AutoHotkey\Compiler\Ahk2Exe.exe"),

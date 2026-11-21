@@ -2,7 +2,7 @@
 
 ## Project
 
-Single-file AutoHotkey v2 tray app (`caffeine.ahk`) that prevents Windows sleep/display-off via `SetThreadExecutionState`. MIT licensed.
+AutoHotkey v2 tray app that prevents Windows sleep/display-off via `SetThreadExecutionState`. MIT licensed. `caffeine.ahk` holds the tray UI and side effects, `core.ahk` the pure logic, and `tests\` the headless tests.
 
 ## Build & Run
 

@@ -6,12 +6,18 @@
   },
   "permissions": {
     "deny": [
-      "Bash(git commit *--no-verify*)",
+      "Bash(git commit *--no-v*)",
       "Bash(git commit -n*)",
       "Bash(git commit * -n*)",
-      "PowerShell(git commit *--no-verify*)",
+      "Bash(git *-c core.hooksPath*)",
+      "Bash(git config *core.hooksPath *)",
+      "Bash(git config *--unset*core.hooksPath*)",
+      "PowerShell(git commit *--no-v*)",
       "PowerShell(git commit -n*)",
-      "PowerShell(git commit * -n*)"
+      "PowerShell(git commit * -n*)",
+      "PowerShell(git *-c core.hooksPath*)",
+      "PowerShell(git config *core.hooksPath *)",
+      "PowerShell(git config *--unset*core.hooksPath*)"
     ]
   }
 }
