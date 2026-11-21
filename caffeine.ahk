@@ -48,6 +48,7 @@ UpdateStatus()
 TrayTip("Caffeine", "Sleep prevention enabled", 2)
 
 SetTimer(UpdateStatus, 30000)
+OnMessage(0x404, OnTrayClick)
 
 UpdateStatus() {
     global State
@@ -79,6 +80,17 @@ SetMenuSelection(activeItem) {
             A_TrayMenu.Uncheck(item)
         }
     }
+}
+
+; 0x404 is the tray notification message; lParam 0x202 is WM_LBUTTONUP.
+OnTrayClick(wParam, lParam, *) {
+    global State
+    if lParam != 0x202 {
+        return
+    }
+    State.Toggle()
+    SetMenuSelection(State.IsActive ? "Active Indefinitely" : "Inactive")
+    UpdateStatus()
 }
 
 SetInactive(itemName, *) {

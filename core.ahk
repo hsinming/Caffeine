@@ -20,6 +20,15 @@ class CaffeineState {
         this.EndTime := ""
     }
 
+    ; Any Active period goes Inactive; Inactive goes Active Indefinite.
+    Toggle() {
+        if this.IsActive {
+            this.Deactivate()
+        } else {
+            this.ActivateIndefinite()
+        }
+    }
+
     RemainingSeconds(now) {
         return DateDiff(this.EndTime, now, "Seconds")
     }
