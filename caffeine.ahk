@@ -9,6 +9,8 @@
 ;@Ahk2Exe-SetVersion      1.1.1
 ;@Ahk2Exe-SetCopyright    Copyright 2025
 
+#Include %A_LineFile%\..\core.ahk
+
 ES_CONTINUOUS       := 0x80000000
 ES_DISPLAY_REQUIRED := 0x00000002
 
@@ -42,69 +44,20 @@ A_TrayMenu.Add("Stop && Exit", (*) => ExitApp())
 
 SetMenuSelection("Active Indefinitely")
 Caffeinate(true)
-State.UpdateStatus()
+UpdateStatus()
 TrayTip("Caffeine", "Sleep prevention enabled", 2)
 
-SetTimer(KeepAwake, 30000)
+SetTimer(UpdateStatus, 30000)
 
-KeepAwake() {
+UpdateStatus() {
     global State
-    State.UpdateStatus()
-}
-
-class CaffeineState {
-    IsActive := true
-    EndTime := ""
-
-    ActivateIndefinite() {
-        this.IsActive := true
-        this.EndTime := ""
-    }
-
-    ActivateUntil(timestamp) {
-        this.IsActive := true
-        this.EndTime := timestamp
-    }
-
-    Deactivate() {
-        this.IsActive := false
-        this.EndTime := ""
-    }
-
-    RemainingSeconds() {
-        return DateDiff(this.EndTime, A_Now, "Seconds")
-    }
-
-    UpdateStatus() {
-        if !this.IsActive {
-            Caffeinate(false)
-            UpdateIcon("off.ico")
-            A_IconTip := "Caffeine (Inactive)"
-            return
-        }
-        if this.EndTime == "" {
-            Caffeinate(true)
-            UpdateIcon("on.ico")
-            A_IconTip := "Caffeine (Active Indefinitely)"
-        } else {
-            remaining_seconds := this.RemainingSeconds()
-            if remaining_seconds <= 0 {
-                this.IsActive := false
-                Caffeinate(false)
-                this.EndTime := ""
-                UpdateIcon("off.ico")
-                SetMenuSelection("Inactive")
-                A_IconTip := "Caffeine (Inactive)"
-                TrayTip("Caffeine duration completed. Sleep prevention disabled.", "Caffeine", 1)
-            } else {
-                Caffeinate(true)
-                UpdateIcon("on.ico")
-                remaining_minutes := Ceil(remaining_seconds / 60)
-                hours := remaining_minutes // 60
-                minutes := Mod(remaining_minutes, 60)
-                A_IconTip := "Caffeine (Active - " hours "h " minutes "m remaining)"
-            }
-        }
+    status := State.Status(A_Now)
+    Caffeinate(status.Active)
+    UpdateIcon(status.Active ? "on.ico" : "off.ico")
+    A_IconTip := status.Tip
+    if status.Expired {
+        SetMenuSelection("Inactive")
+        TrayTip("Caffeine duration completed. Sleep prevention disabled.", "Caffeine", 1)
     }
 }
 
@@ -132,21 +85,21 @@ SetInactive(itemName, *) {
     global State
     State.Deactivate()
     SetMenuSelection("Inactive")
-    State.UpdateStatus()
+    UpdateStatus()
 }
 
 SetIndefinite(itemName, *) {
     global State
     State.ActivateIndefinite()
     SetMenuSelection("Active Indefinitely")
-    State.UpdateStatus()
+    UpdateStatus()
 }
 
 SetHours(n) {
     global State
     State.ActivateUntil(DateAdd(A_Now, n, "Hours"))
     SetMenuSelection("Active for " n " Hour" (n == 1 ? "" : "s"))
-    State.UpdateStatus()
+    UpdateStatus()
 }
 
 SetCustomDuration(itemName, *) {
@@ -172,7 +125,7 @@ SetCustomDuration(itemName, *) {
     total_minutes := hours * 60 + minutes
     State.ActivateUntil(DateAdd(A_Now, total_minutes, "Minutes"))
     SetMenuSelection("Active for Custom Duration...")
-    State.UpdateStatus()
+    UpdateStatus()
 }
 
 SetCustomTime(itemName, *) {
@@ -198,7 +151,7 @@ SetCustomTime(itemName, *) {
     }
     State.ActivateUntil(target_timestamp)
     SetMenuSelection("Active till Custom Time...")
-    State.UpdateStatus()
+    UpdateStatus()
 }
 
 ; Version and OS strings are URL-safe (digits and dots), so no encoding is needed.
