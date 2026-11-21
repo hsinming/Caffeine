@@ -53,7 +53,7 @@ ParseDuration(input, now) {
     }
     hours := Integer(match[1])
     minutes := Integer(match[2])
-    if hours < 0 || minutes < 0 || minutes > 59 {
+    if minutes > 59 {
         return {Time: "", Error: "Invalid values. Hours must be >= 0, and minutes must be between 0 and 59."}
     }
     if hours == 0 && minutes == 0 {
@@ -69,7 +69,7 @@ ParseTargetTime(input, now) {
     }
     target_hours := Integer(match[1])
     target_minutes := Integer(match[2])
-    if target_hours < 0 || target_hours > 23 || target_minutes < 0 || target_minutes > 59 {
+    if target_hours > 23 || target_minutes > 59 {
         return {Time: "", Error: "Invalid time values. Hours must be 0-23, and minutes must be 0-59."}
     }
     target_timestamp := SubStr(now, 1, 8) . Format("{:02d}", target_hours) . Format("{:02d}", target_minutes) . "00"

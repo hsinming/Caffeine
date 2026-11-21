@@ -1,10 +1,20 @@
 #!/bin/sh
 # Quality Gates 1 and 2: tests and build must pass. Never bypass with --no-verify.
+# The gates check the working tree, so it must match the index.
+git diff --quiet || {
+    echo "pre-commit: tracked files have unstaged changes, so the tests would not check what you commit." >&2
+    echo "pre-commit: stage them (git add) or stash them, then commit again." >&2
+    exit 1
+}
 powershell -NoProfile -ExecutionPolicy Bypass -File ./test.ps1 || {
     echo "pre-commit: tests failed, commit rejected. Read test-result.json for details." >&2
     exit 1
 }
-powershell -NoProfile -ExecutionPolicy Bypass -File ./build.ps1 || {
+# Build to a temp path so a running Caffeine.exe cannot lock the output.
+out="$(mktemp -d)/Caffeine.exe"
+powershell -NoProfile -ExecutionPolicy Bypass -File ./build.ps1 -Output "$out" || {
+    rm -rf "$(dirname "$out")"
     echo "pre-commit: build failed, commit rejected." >&2
     exit 1
 }
+rm -rf "$(dirname "$out")"
