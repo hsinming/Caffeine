@@ -1,0 +1,25 @@
+name: Bug report
+description: Report a problem with Caffeine
+labels: ["bug", "needs-triage"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Caffeine version
+      description: Filled in by "Report a Bug" in the tray menu. "script" means the uncompiled script.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Windows version
+      description: Filled in by "Report a Bug" in the tray menu.
+    validations:
+      required: true
