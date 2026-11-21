@@ -1,0 +1,10 @@
+#!/bin/sh
+# Quality Gates 1 and 2: tests and build must pass. Never bypass with --no-verify.
+powershell -NoProfile -ExecutionPolicy Bypass -File ./test.ps1 || {
+    echo "pre-commit: tests failed, commit rejected. Read test-result.json for details." >&2
+    exit 1
+}
+powershell -NoProfile -ExecutionPolicy Bypass -File ./build.ps1 || {
+    echo "pre-commit: build failed, commit rejected." >&2
+    exit 1
+}
