@@ -49,8 +49,8 @@
 * **Flexible Durations**:
   * **Keep Awake Indefinitely** (Default).
   * **Preset Timers**: Keep awake for exactly 1, 2, 3, or 4 hours.
-  * **Custom Countdown**: Define your own countdown duration (e.g., 1 hour and 30 minutes).
-  * **Custom Target Time**: Keep awake until a specific wall-clock time (e.g., 17:30).
+  * **Active Until...**: Pick a duration on a slider (15 minutes to 24 hours) or an End Time on a clock; the two stay in sync.
+* **One-Click Toggle**: Left-click the tray icon to switch between Active Indefinitely and Inactive.
 * **Intuitive Visual Feedback**: The system tray icon dynamically changes to reflect the current state:
   * 🔴 **Active**: Shows the active cup icon (`on.ico`, a coffee cup filled with hot red coffee), indicating sleep prevention is currently active (symbolizing the PC is caffeinated).
   * ⚪ **Inactive**: Shows the inactive cup icon (`off.ico`, a black outline of an empty coffee cup), indicating sleep prevention is paused and Windows will sleep normally (symbolizing the cup is empty).

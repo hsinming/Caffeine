@@ -13,6 +13,9 @@ Test("timed mode expires exactly at end time", () => AssertStatus(Timed(Now).Sta
 Test("timed mode expires after end time", () => AssertStatus(Timed("20260101115959").Status(Now), false, "Caffeine (Inactive)", true))
 Test("expiry is reported once", ExpiryReportedOnce)
 Test("deactivate gives inactive status", DeactivateStatus)
+Test("timed before end time", () => AssertEqual(true, Timed("20260101133000").IsTimed(Now)))
+Test("not timed once end time has passed", () => AssertEqual(false, Timed("20260101115959").IsTimed(Now)))
+Test("not timed when indefinite", () => AssertEqual(false, CaffeineState().IsTimed(Now)))
 
 Timed(endTime) {
     s := CaffeineState()

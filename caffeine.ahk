@@ -113,16 +113,23 @@ SetHours(n) {
 }
 
 ; The control changed last sets the End Time on OK: slider = duration from OK, picker = clock time.
+; With neither changed, a timed Active period keeps its exact End Time.
 ShowActiveUntil(*) {
     global State
+    static hwnd := 0
+    if hwnd && WinExist("ahk_id " hwnd) {
+        WinActivate()
+        return
+    }
     now := A_Now
-    timed := State.IsActive && State.EndTime != ""
-    minutes := timed ? MinutesUntil(FormatTime(State.EndTime, "HH:mm"), now) : 60
-    sel := {Last: timed ? "picker" : "slider"}
+    timed := State.IsTimed(now)
+    minutes := timed ? MinutesUntil(State.EndTime, now) : 60
+    lastEdited := timed ? "" : "slider"
 
     dlg := Gui("+AlwaysOnTop -MinimizeBox", "Active Until")
     dlg.AddText(, "Duration:")
-    slider := dlg.AddSlider("w280 Range1-96 TickInterval4", SnapMinutes(minutes) // 15)
+    ; AltSubmit raises Change during a drag, not only on release.
+    slider := dlg.AddSlider("w280 Range1-96 TickInterval4 AltSubmit", SliderPos(minutes))
     dlg.AddText("Section", "End Time:")
     picker := dlg.AddDateTime("ys-3 w70 1", "HH:mm")
     picker.Value := EndTimeFor(minutes, now)
@@ -134,26 +141,31 @@ ShowActiveUntil(*) {
     slider.OnEvent("Change", OnSlider)
     picker.OnEvent("Change", OnPicker)
     dlg.Show()
+    hwnd := dlg.Hwnd
+
+    PickedEndTime() => ParseEndTime(FormatTime(picker.Value, "HH:mm"), A_Now)
 
     OnSlider(*) {
-        sel.Last := "slider"
-        m := slider.Value * 15
+        lastEdited := "slider"
+        m := SliderMinutes(slider.Value)
         picker.Value := EndTimeFor(m, A_Now)
         label.Value := UntilLabel(m, A_Now)
     }
 
     OnPicker(*) {
-        sel.Last := "picker"
-        m := MinutesUntil(FormatTime(picker.Value, "HH:mm"), A_Now)
-        slider.Value := SnapMinutes(m) // 15
+        lastEdited := "picker"
+        m := MinutesUntil(PickedEndTime(), A_Now)
+        slider.Value := SliderPos(m)
         label.Value := UntilLabel(m, A_Now)
     }
 
     OnOK(*) {
-        if sel.Last == "slider" {
-            endTime := EndTimeFor(slider.Value * 15, A_Now)
+        if lastEdited == "slider" {
+            endTime := EndTimeFor(SliderMinutes(slider.Value), A_Now)
+        } else if lastEdited == "picker" {
+            endTime := PickedEndTime()
         } else {
-            endTime := ParseTargetTime(FormatTime(picker.Value, "HH:mm"), A_Now).Time
+            endTime := State.EndTime
         }
         dlg.Destroy()
         State.ActivateUntil(endTime)
@@ -161,6 +173,7 @@ ShowActiveUntil(*) {
         UpdateStatus()
     }
 }
+
 ; Version and OS strings are URL-safe (digits and dots), so no encoding is needed.
 BugReportUrl() {
     version := A_IsCompiled ? FileGetVersion(A_ScriptFullPath) : "script"
