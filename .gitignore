@@ -15,9 +15,5 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
-# Tools
-.claude/
-.opencode/
-opencode.json
-CLAUDE.md
-AGENTS.md
+# Claude Code local settings
+.claude/settings.local.json
