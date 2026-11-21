@@ -6,6 +6,8 @@ $Root       = $PSScriptRoot
 $ResultPath = Join-Path $Root "test-result.json"
 $TimeoutMs  = 30000
 
+git -C $Root config core.hooksPath .githooks # activates the pre-commit Quality Gate
+
 $Ahk = @(
     (Join-Path $env:ProgramFiles "AutoHotkey\v2\AutoHotkey64.exe"),
     (Join-Path $env:ProgramFiles "AutoHotkey\v2\AutoHotkey.exe"),

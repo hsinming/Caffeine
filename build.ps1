@@ -19,7 +19,8 @@ Write-Host "Compiler : $Ahk2Exe"
 Write-Host "Source   : $Source"
 Write-Host "Output   : $Output"
 
-& $Ahk2Exe /in $Source /out $Output
+if (Test-Path $Output) { Remove-Item $Output } # a stale exe must not count as success
+& $Ahk2Exe /in $Source /out $Output | Out-Null # piping makes PowerShell wait for the GUI compiler
 
 if (Test-Path $Output) {
     Write-Host "Build succeeded: $Output"

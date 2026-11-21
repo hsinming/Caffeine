@@ -3,5 +3,15 @@
     "mattpocock-skills@claude-plugins-official": true,
     "ponytail@ponytail": true,
     "asd-ste100@asd-ste100": true
+  },
+  "permissions": {
+    "deny": [
+      "Bash(git commit *--no-verify*)",
+      "Bash(git commit -n*)",
+      "Bash(git commit * -n*)",
+      "PowerShell(git commit *--no-verify*)",
+      "PowerShell(git commit -n*)",
+      "PowerShell(git commit * -n*)"
+    ]
   }
 }
