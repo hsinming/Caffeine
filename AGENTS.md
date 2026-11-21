@@ -6,7 +6,7 @@ AutoHotkey v2 tray app that prevents Windows sleep/display-off via `SetThreadExe
 
 ## Build & Run
 
-`.\build.ps1` compiles `caffeine.ahk` to `Caffeine.exe` and doubles as the compile check. Run the script with `AutoHotkey.exe caffeine.ahk` (AutoHotkey v2). Ahk2Exe directives are comments at the top of `caffeine.ahk`.
+`.\build.ps1` compiles `caffeine.ahk` to `dist\Caffeine.exe` (or `-Output <path>`) and doubles as the compile check. Run the script with `AutoHotkey.exe caffeine.ahk` (AutoHotkey v2). Ahk2Exe directives are comments at the top of `caffeine.ahk`.
 
 `.\test.ps1` runs the smoke test (`tests\smoke.ahk` against `caffeine.ahk`) and every `tests\*_test.ahk` headless, writes `test-result.json`, and exits non-zero on any failure. Tests use `Test(name, fn)` and `AssertEqual` from `tests\Assert.ahk`; pure logic lives in `core.ahk` and takes `now` as a parameter.
 

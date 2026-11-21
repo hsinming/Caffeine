@@ -1,5 +1,6 @@
-# Compiled executable
+# Compiled executable and build output
 *.exe
+dist/
 
 # AutoHotkey compiler base (included in compiled exe)
 *.bin
