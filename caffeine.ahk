@@ -36,6 +36,7 @@ A_TrayMenu.Add("Active for 4 Hours", (*) => SetHours(4))
 A_TrayMenu.Add("Active for Custom Duration...", SetCustomDuration)
 A_TrayMenu.Add("Active till Custom Time...", SetCustomTime)
 A_TrayMenu.Add("Inactive", SetInactive)
+A_TrayMenu.Add("Report a Bug", (*) => Run(BugReportUrl()))
 A_TrayMenu.Add() ; Separator
 A_TrayMenu.Add("Stop && Exit", (*) => ExitApp())
 
@@ -198,6 +199,12 @@ SetCustomTime(itemName, *) {
     State.ActivateUntil(target_timestamp)
     SetMenuSelection("Active till Custom Time...")
     State.UpdateStatus()
+}
+
+; Version and OS strings are URL-safe (digits and dots), so no encoding is needed.
+BugReportUrl() {
+    version := A_IsCompiled ? FileGetVersion(A_ScriptFullPath) : "script"
+    return "https://github.com/hsinming/Caffeine/issues/new?template=bug.yml&version=" version "&os=" A_OSVersion
 }
 
 UpdateIcon(iconName) {
