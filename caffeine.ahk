@@ -6,7 +6,7 @@
 ;@Ahk2Exe-AddResource %A_ScriptDir%\off.ico, 207
 ;@Ahk2Exe-SetProductName Caffeine
 ;@Ahk2Exe-SetDescription  Prevents Windows from sleeping or turning off the display
-;@Ahk2Exe-SetVersion      1.1.1
+;@Ahk2Exe-SetVersion      1.2.0
 ;@Ahk2Exe-SetCopyright    Copyright 2025
 
 #Include %A_LineFile%\..\core.ahk
