@@ -10,7 +10,9 @@
     -Mode Drive    : Run for an App Drive. Starts an isolated copy (git's tracked and unignored files only,
                      LOCALAPPDATA redirected, AIH_DEVTOOLS_PORT set to a free port) and stays up until
                      AppDrive.mjs stop, or the app exits. -EvidenceDir receives session.json, the app log
-                     and result.json.
+                     and result.json. -StandIn starts the stand-ins for the outside systems first, with Node on
+                     the same desktop: node <script> <app copy> <ready file>. It writes the ready file once, as a
+                     JSON object of environment variables for the app, then stays up until the drive ends it.
 
     The target runs on a private Win32 desktop inside a kill-on-close Job Object: no window reaches the
     user's screen, no focus is stolen, and a hotkey or #SingleInstance in the target cannot touch the
@@ -37,6 +39,7 @@ param(
     [switch] $VisibleDesktop,      # run on the user's desktop (windows show; collision check applies)
     [switch] $AllowCollision,      # with -VisibleDesktop: run although the same script is already running
     [string] $EvidenceDir,         # Drive: a new folder that the app's repo ignores
+    [string] $StandIn,             # Drive: the app repo's stand-in script (.mjs)
     [string] $AhkExe
 )
 $ErrorActionPreference = 'Stop'
@@ -84,13 +87,19 @@ public sealed class AhkProbeSandbox : IDisposable {
     [DllImport("user32.dll")] static extern bool PostMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern IntPtr SendMessageTimeoutW(IntPtr h, uint m, IntPtr w, IntPtr l, uint f, uint ms, out IntPtr r);
 
-    IntPtr hDesk, hJob, hProc; Thread outThread, errThread;
+    IntPtr hDesk, hJob, hProc; string desktop; bool guest; Thread outThread, errThread;
     readonly StringBuilder err = new StringBuilder();
     public readonly ConcurrentQueue<string> Lines = new ConcurrentQueue<string>();
     public int Pid;
 
-    public int Start(string exe, string args, string workDir, bool hidden) {
-        string desktop = null;
+    // host: start on that sandbox's desktop and in its job; the host must be disposed last.
+    public int Start(string exe, string args, string workDir, bool hidden, AhkProbeSandbox host) {
+        if (host != null) { guest = true; hDesk = host.hDesk; hJob = host.hJob; desktop = host.desktop; }
+        else Isolate(hidden);
+        return Launch(exe, args, workDir);
+    }
+
+    void Isolate(bool hidden) {
         if (hidden) {
             string name = "ahkprobe-" + Guid.NewGuid().ToString("N").Substring(0, 8);
             hDesk = CreateDesktopW(name, IntPtr.Zero, IntPtr.Zero, 0, 0x10000000, IntPtr.Zero);   // GENERIC_ALL
@@ -100,7 +109,9 @@ public sealed class AhkProbeSandbox : IDisposable {
         hJob = CreateJobObjectW(IntPtr.Zero, null);
         var lim = new JOB_EXTENDED(); lim.Basic.LimitFlags = 0x2000;                                // KILL_ON_JOB_CLOSE
         if (!SetInformationJobObject(hJob, 9, ref lim, Marshal.SizeOf(typeof(JOB_EXTENDED)))) throw new InvalidOperationException("SetInformationJobObject failed");
+    }
 
+    int Launch(string exe, string args, string workDir) {
         var sa = new SECURITY_ATTRIBUTES(); sa.nLength = Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES)); sa.bInheritHandle = true;
         IntPtr outR, outW, errR, errW;
         if (!CreatePipe(out outR, out outW, ref sa, 0) || !CreatePipe(out errR, out errW, ref sa, 0)) throw new InvalidOperationException("CreatePipe failed");
@@ -165,6 +176,7 @@ public sealed class AhkProbeSandbox : IDisposable {
 
     public void Dispose() {
         if (hProc != IntPtr.Zero && !HasExited()) Kill();
+        if (guest) hJob = hDesk = IntPtr.Zero;                                   // the host's
         if (hJob != IntPtr.Zero) { CloseHandle(hJob); hJob = IntPtr.Zero; }      // kill-on-close ends any child the target started
         if (hProc != IntPtr.Zero) { CloseHandle(hProc); hProc = IntPtr.Zero; }
         if (hDesk != IntPtr.Zero) { CloseDesktop(hDesk); hDesk = IntPtr.Zero; }
@@ -184,11 +196,12 @@ function Find-AhkExe {
 
 $Script = (Resolve-Path $Script).Path
 $drive = $Mode -eq 'Drive'
-$sb = $spawnedPid = $work = $result = $null
+$sb = $standInBox = $spawnedPid = $work = $result = $null
 # A drive that fails on the way leaves no app and no unused copy, and tells AppDrive.mjs why.
 trap {
     if ($drive) {
         if ($sb) { $sb.Dispose() }
+        if ($standInBox) { Stop-StandIn }
         if ($work -and -not $spawnedPid) { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
         if ($result.evidence) { $result.stderr = "$_"; Finish 'ERROR' }
     }
@@ -197,12 +210,14 @@ trap {
 if ($drive) {
     if (-not $EvidenceDir) { throw '-Mode Drive needs -EvidenceDir.' }
     if ($VisibleDesktop) { throw '-Mode Drive runs on the hidden desktop only.' }
+    if ($StandIn) { $StandIn = (Resolve-Path $StandIn).Path }
     $EvidenceDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($EvidenceDir)
     if (Test-Path $EvidenceDir) { throw "Evidence folder already exists: $EvidenceDir" }
     # --show-cdup is relative, so no non-ASCII path crosses the console encoding.
     $up = git -C (Split-Path $Script) rev-parse --show-cdup
     if ($LASTEXITCODE) { throw "Not in a git repository: $Script" }
     $repo = [IO.Path]::GetFullPath((Join-Path (Split-Path $Script) "$up")).TrimEnd('\')
+    if ($StandIn -and -not $StandIn.StartsWith("$repo\", 'OrdinalIgnoreCase')) { throw "The stand-in must be in the app's repository: $StandIn" }
     git -C $repo check-ignore -q -- (Join-Path $EvidenceDir 'x')
     if ($LASTEXITCODE) { throw "The app's repository must ignore the evidence folder: $EvidenceDir" }
 }
@@ -216,6 +231,15 @@ function Write-DriveJson([string] $name, $data) {
     $path = Join-Path $EvidenceDir $name
     [IO.File]::WriteAllText("$path.tmp", ($data | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false))
     [IO.File]::Move("$path.tmp", $path)
+}
+
+# The job ends the stand-in and everything it started; its output is kept as evidence.
+function Stop-StandIn {
+    if (-not $standInBox.HasExited()) { $standInBox.Kill() }
+    $standInBox.DrainOutput(2000)
+    $text = ($standInBox.Lines.ToArray() -join "`n") + "`n" + $standInBox.Stderr()
+    [IO.File]::WriteAllText((Join-Path $EvidenceDir 'stand-in.log'), $text, [Text.UTF8Encoding]::new($false))
+    $standInBox.Dispose()
 }
 
 function Finish([string] $verdict) {
@@ -284,9 +308,25 @@ if ($drive) {
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
     $listener.Start(); $port = $listener.LocalEndpoint.Port; $listener.Stop()
     # WEBVIEW2_USER_DATA_FOLDER does not isolate: the app passes its own folder, built from LOCALAPPDATA.
-    $childEnv = @{ LOCALAPPDATA = $localAppData; AIH_DEVTOOLS_PORT = "$port" }
     $null = New-Item -ItemType Directory -Path $EvidenceDir
     $result.evidence = $EvidenceDir
+    if ($StandIn) {
+        $standInScript = Join-Path $copy $StandIn.Substring($repo.Length + 1)
+        if (-not (Test-Path $standInScript)) { throw "git ignores the stand-in: $StandIn" }
+        $readyFile = Join-Path $work 'stand-in.json'
+        $node = (Get-Command node -CommandType Application | Select-Object -First 1).Source
+        $box = [AhkProbeSandbox]::new()
+        $null = $box.Start($node, "`"$standInScript`" `"$copy`" `"$readyFile`"", $copy, $true, $null)
+        $standInBox = $box
+        $end = (Get-Date).AddSeconds(30)
+        while (-not (Test-Path $readyFile) -and -not $standInBox.HasExited() -and (Get-Date) -lt $end) { Start-Sleep -Milliseconds 50 }
+        if (-not (Test-Path $readyFile) -or $standInBox.HasExited()) { $standInBox.DrainOutput(500); throw "The stand-in did not start: $($standInBox.Stderr())" }
+        (Get-Content $readyFile -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $childEnv[$_.Name] = "$($_.Value)" }
+    }
+    # Last, so a stand-in cannot undo the isolation. AIH_DRIVE tells the app to refuse when it lacks a stand-in.
+    $childEnv.LOCALAPPDATA = $localAppData
+    $childEnv.AIH_DEVTOOLS_PORT = "$port"
+    $childEnv.AIH_DRIVE = 'synthetic'
 }
 $argList += $target
 
@@ -299,7 +339,7 @@ foreach ($name in $childEnv.Keys) {
     $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name)
     [Environment]::SetEnvironmentVariable($name, $childEnv[$name])
 }
-try { $spawnedPid = $sb.Start($exe, (($argList | ForEach-Object { "`"$_`"" }) -join ' '), $workDir, -not $VisibleDesktop) }   # the only process this script may ever kill
+try { $spawnedPid = $sb.Start($exe, (($argList | ForEach-Object { "`"$_`"" }) -join ' '), $workDir, -not $VisibleDesktop, $standInBox) }   # the only process this script may ever kill
 finally { foreach ($name in $savedEnv.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnv[$name]) } }
 if ($drive) {
     Write-DriveJson 'session.json' ([ordered]@{ pid = $spawnedPid; port = $port; desktop = $result.desktop; script = $target; workDir = $work; localAppData = $localAppData })
@@ -327,7 +367,10 @@ if ($Mode -ne 'Validate' -and $Hotkey.Count) {
 }
 
 if ($drive) {
-    while (-not $sb.HasExited() -and -not (Test-Path (Join-Path $EvidenceDir 'stop'))) { Start-Sleep -Milliseconds 100 }
+    while (-not $sb.HasExited() -and -not (Test-Path (Join-Path $EvidenceDir 'stop'))) {
+        if ($standInBox -and $standInBox.HasExited()) { $standInEnded = $true; break }
+        Start-Sleep -Milliseconds 100
+    }
 } else {
     $null = Wait-Until { $false }
 }
@@ -343,6 +386,8 @@ $sb.DrainOutput(2000)
 $result.exitCode = if ($result.timedOut) { $null } else { $sb.ExitCode() }
 $result.stderr = $sb.Stderr().Trim()
 $sb.Dispose()
+if ($standInBox) { Stop-StandIn }
+if ($standInEnded) { $result.stderr += "`nThe stand-in ended before the drive; see stand-in.log." }
 
 foreach ($line in $lines.ToArray()) {
     if ($line -match '^AHKPROBE\|(\w+)\|(.*)$') {
@@ -381,6 +426,7 @@ for ($try = 0; $try -lt 20 -and -not $keepWork -and (Test-Path $work); $try++) {
 
 if ($dump) { $result.crashDump = $dump.FullName; Finish 'CRASH' }
 if ($result.timedOut -and -not $result.responsive) { Finish 'HUNG' }
+if ($standInEnded) { Finish 'ERROR' }
 if ($result.errors.Count -or $result.exitCode -in 2, 3 -or ($result.stderr -and $result.exitCode -ne 0)) { Finish 'ERROR' }
 if (@($result.asserts).Count -or @($result.steps | Where-Object { -not $_.ok }).Count -or $result.exitCode -eq 1) { Finish 'FAIL' }
 if ($result.timedOut -and -not $Persistent -and -not $drive) { Finish 'TIMEOUT' }

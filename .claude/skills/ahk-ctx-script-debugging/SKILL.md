@@ -239,6 +239,11 @@ node "<skill>\scripts\AppDrive.mjs" $e stop
   If the runner itself is killed, the app ends with it; the logs stay in `workDir` of `session.json`.
 - The clipboard, the registry, `%APPDATA%`, `%TEMP%` and the network are still the user's. The drive
   skill of each app must supply stand-ins for outside systems.
+- **Stand-ins**: `-StandIn C:\proj\tools\stand-ins.mjs` runs that script of the copy with Node, on the drive's desktop and before the app,
+  as `node <script> <app copy> <ready file>`. It may seed invented files in the copy and open windows the app
+  must find. When all is up it writes the ready file (write, then rename): a JSON object of environment
+  variables for the app. It ends with the drive; if it ends earlier, the drive fails. Its output is `stand-in.log`.
+- The app sees `AIH_DRIVE=synthetic` in every drive: it must refuse to start when a stand-in is missing.
 
 ## Without PowerShell
 
