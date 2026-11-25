@@ -41,7 +41,8 @@ async function connect(waitMs = 5000) {
   await new Promise((ok, no) => { ws.onopen = ok; ws.onerror = () => no(new Error('CDP connection failed')); });
   const waiting = new Map();
   let id = 0;
-  ws.onmessage = e => { const m = JSON.parse(e.data); waiting.get(m.id)?.(m); };
+  const called = new Set();   // page bindings that were called
+  ws.onmessage = e => { const m = JSON.parse(e.data); m.method === 'Runtime.bindingCalled' ? called.add(m.params.name) : waiting.get(m.id)?.(m); };
   const send = (method, params = {}) => new Promise((ok, no) => {
     const timer = setTimeout(() => no(new Error(`${method}: no answer in 15 s`)), 15000);
     waiting.set(++id, m => { clearTimeout(timer); m.error ? no(new Error(`${method}: ${m.error.message}`)) : ok(m.result); });
@@ -53,14 +54,17 @@ async function connect(waitMs = 5000) {
     if (x) throw new Error(x.exception?.description ?? JSON.stringify(x.exception?.value) ?? x.text);
     return r.result.value ?? r.result.unserializableValue ?? null;
   };
-  return { page, send, evaluate };
+  return { page, send, evaluate, called };
 }
+
+// The empty document before the first navigation and the browser's error page are complete too, under the app's URL.
+const LOADED = '!/^(about:blank|chrome-error:)/.test(location.href) && document.readyState === "complete"';
 
 const commands = {
   async doctor() {
     const s = await until(30000, 'session.json is missing; is the runner up?', session);
     const { page, evaluate } = await connect(30000);
-    await until(15000, 'the page did not finish loading', () => evaluate('document.readyState === "complete"'));
+    await until(15000, 'the page did not finish loading', () => evaluate(LOADED));
     // The proof that the redirect took: without it the app uses the user's real WebView2 folder.
     const profile = fs.globSync(['*/EBWebView', '*/*/EBWebView'], { cwd: s.localAppData })[0];
     if (!profile) {
@@ -71,8 +75,11 @@ const commands = {
   },
   async eval() { return (await connect()).evaluate(arg); },
   async click() {
-    const { send, evaluate } = await connect();
+    const { send, evaluate, called } = await connect();
+    await send('Runtime.enable');
+    await send('Runtime.addBinding', { name: '__driveClicked' });
     const { x, y } = await until(5000, `cannot click ${arg}`, () => evaluate(`(async () => {
+      if (!(${LOADED})) throw new Error('the page is still loading');
       const el = document.querySelector(${JSON.stringify(arg)});
       if (!el) throw new Error('no such element');
       if (el.matches(':disabled')) throw new Error('disabled');
@@ -82,11 +89,20 @@ const commands = {
       if (a.x !== b.x || a.y !== b.y) throw new Error('still moving');
       const hit = document.elementFromPoint(b.x, b.y);
       if (!el.contains(hit)) throw new Error('hidden or covered by ' + (hit?.outerHTML.slice(0, 80) ?? 'nothing'));
+      const binding = window.__driveClicked;
+      const clicked = e => {
+        if (!e.isTrusted || !el.contains(e.target)) return;   // the page may click by itself first
+        window.removeEventListener('click', clicked, true);
+        binding('');
+      };
+      window.addEventListener('click', clicked, true);
       return b;
     })()`));
     const mouse = (type, buttons) => send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons, clickCount: 1 });
     await mouse('mousePressed', 1);
     await mouse('mouseReleased', 0);
+    // The input can be lost on the way: without this a click that did nothing would be ok.
+    await until(5000, `the click never reached ${arg}`, () => called.has('__driveClicked'));
     return { x, y };
   },
   async screenshot() {
