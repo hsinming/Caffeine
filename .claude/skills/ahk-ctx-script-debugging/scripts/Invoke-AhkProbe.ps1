@@ -7,6 +7,10 @@
     -Mode Validate : AutoHotkey /Validate. Parses the script and exits, even for persistent scripts.
     -Mode Run      : injects AhkProbe.ahk with /include (the target file is never edited), so uncaught
                      runtime errors arrive as structured AHKPROBE|error lines on stdout, not as popups.
+    -Mode Drive    : Run for an App Drive. Starts an isolated copy (git's tracked and unignored files only,
+                     LOCALAPPDATA redirected, AIH_DEVTOOLS_PORT set to a free port) and stays up until
+                     AppDrive.mjs stop, or the app exits. -EvidenceDir receives session.json, the app log
+                     and result.json.
 
     The target runs on a private Win32 desktop inside a kill-on-close Job Object: no window reaches the
     user's screen, no focus is stolen, and a hotkey or #SingleInstance in the target cannot touch the
@@ -24,7 +28,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)] [string] $Script,
-    [ValidateSet('Run', 'Validate')] [string] $Mode = 'Run',
+    [ValidateSet('Run', 'Validate', 'Drive')] [string] $Mode = 'Run',
     [int] $TimeoutSec = 10,
     [switch] $Persistent,          # expected to stay resident: observe for TimeoutSec, then judge
     [int[]] $Hotkey = @(),         # hotkey indexes (definition order, from 0) to fire with WM_HOTKEY after ready
@@ -32,6 +36,7 @@ param(
     [ValidateSet('exit', 'continue')] [string] $OnError = 'exit',
     [switch] $VisibleDesktop,      # run on the user's desktop (windows show; collision check applies)
     [switch] $AllowCollision,      # with -VisibleDesktop: run although the same script is already running
+    [string] $EvidenceDir,         # Drive: a new folder that the app's repo ignores
     [string] $AhkExe
 )
 $ErrorActionPreference = 'Stop'
@@ -178,13 +183,44 @@ function Find-AhkExe {
 }
 
 $Script = (Resolve-Path $Script).Path
+$drive = $Mode -eq 'Drive'
+$sb = $spawnedPid = $work = $result = $null
+# A drive that fails on the way leaves no app and no unused copy, and tells AppDrive.mjs why.
+trap {
+    if ($drive) {
+        if ($sb) { $sb.Dispose() }
+        if ($work -and -not $spawnedPid) { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
+        if ($result.evidence) { $result.stderr = "$_"; Finish 'ERROR' }
+    }
+    break
+}
+if ($drive) {
+    if (-not $EvidenceDir) { throw '-Mode Drive needs -EvidenceDir.' }
+    if ($VisibleDesktop) { throw '-Mode Drive runs on the hidden desktop only.' }
+    $EvidenceDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($EvidenceDir)
+    if (Test-Path $EvidenceDir) { throw "Evidence folder already exists: $EvidenceDir" }
+    # --show-cdup is relative, so no non-ASCII path crosses the console encoding.
+    $up = git -C (Split-Path $Script) rev-parse --show-cdup
+    if ($LASTEXITCODE) { throw "Not in a git repository: $Script" }
+    $repo = [IO.Path]::GetFullPath((Join-Path (Split-Path $Script) "$up")).TrimEnd('\')
+    git -C $repo check-ignore -q -- (Join-Path $EvidenceDir 'x')
+    if ($LASTEXITCODE) { throw "The app's repository must ignore the evidence folder: $EvidenceDir" }
+}
 $exe = Find-AhkExe
 $result = [ordered]@{ verdict = 'PASS'; mode = $Mode; script = $Script; desktop = $(if ($VisibleDesktop) { 'visible' } else { 'hidden' })
     exitCode = $null; timedOut = $false; resident = $false; responsive = $null; hotkeysFired = @(); errors = @(); asserts = @(); steps = @()
     dialogs = @(); windows = @(); warnings = @(); logs = @(); done = $null; output = @(); stderr = '' }
 
+# Renamed into place, so a reader never sees half a file.
+function Write-DriveJson([string] $name, $data) {
+    $path = Join-Path $EvidenceDir $name
+    [IO.File]::WriteAllText("$path.tmp", ($data | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false))
+    [IO.File]::Move("$path.tmp", $path)
+}
+
 function Finish([string] $verdict) {
     $result.verdict = $verdict
+    if ($drive) { Write-DriveJson 'result.json' $result }
     $result | ConvertTo-Json -Depth 6
     exit (@{ PASS = 0; FAIL = 1; ERROR = 2; TIMEOUT = 3; CRASH = 4; HUNG = 5; BLOCKED = 6 })[$verdict]
 }
@@ -200,7 +236,29 @@ if ($VisibleDesktop -and $Mode -eq 'Run' -and -not $AllowCollision) {
     }
 }
 
+# No real credentials in the copy: git's ignored files stay out, and so does an untracked file that looks like one.
+$credentialFile = '(^|/)(settings[^/]*\.ini[^/]*|license\.cache[^/]*|\.env[^/]*)$'
+function Copy-App([string] $from, [string] $to) {
+    $encoding = [Console]::OutputEncoding
+    [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+    try {
+        $tracked = git -C $from ls-files -z --cached
+        $code = $LASTEXITCODE
+        $untracked = git -C $from ls-files -z --others --exclude-standard
+        if ($code -or $LASTEXITCODE) { throw "git ls-files failed in $from" }
+    } finally { [Console]::OutputEncoding = $encoding }
+    $names = @("$tracked" -split "`0") + @("$untracked" -split "`0" | Where-Object { $_ -notmatch $credentialFile })
+    foreach ($name in $names | Where-Object { $_ } | Sort-Object -Unique -CaseSensitive) {
+        $source = Join-Path $from $name
+        if (-not [IO.File]::Exists($source)) { continue }      # deleted in the working tree
+        $target = Join-Path $to $name
+        $null = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))
+        [IO.File]::Copy($source, $target, $true)
+    }
+}
+
 $probeDir = $PSScriptRoot
+$keepWork = $false
 $work = Join-Path ([IO.Path]::GetTempPath()) ("ahkprobe-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Path $work | Out-Null
 $argList = @('/ErrorStdOut')
@@ -214,12 +272,38 @@ if ($Mode -eq 'Validate') {
     [IO.File]::WriteAllText($preludePath, ($prelude -join "`r`n") + "`r`n", [Text.UTF8Encoding]::new($true))
     $argList += @('/include', $preludePath)
 }
-$argList += $Script
+$target = $Script
+$childEnv = @{}
+if ($drive) {
+    $copy = Join-Path $work 'app'
+    $localAppData = Join-Path $work 'local'
+    $null = New-Item -ItemType Directory -Path $copy, $localAppData
+    Copy-App $repo $copy
+    $target = Join-Path $copy $Script.Substring($repo.Length + 1)
+    if (-not (Test-Path $target)) { throw "git ignores the script: $Script" }
+    $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+    $listener.Start(); $port = $listener.LocalEndpoint.Port; $listener.Stop()
+    # WEBVIEW2_USER_DATA_FOLDER does not isolate: the app passes its own folder, built from LOCALAPPDATA.
+    $childEnv = @{ LOCALAPPDATA = $localAppData; AIH_DEVTOOLS_PORT = "$port" }
+    $null = New-Item -ItemType Directory -Path $EvidenceDir
+    $result.evidence = $EvidenceDir
+}
+$argList += $target
 
 $env:AHKPROBE_ONERROR = $OnError      # the target inherits it
 $sb = [AhkProbeSandbox]::new()
 $started = Get-Date
-$spawnedPid = $sb.Start($exe, (($argList | ForEach-Object { "`"$_`"" }) -join ' '), (Get-Location).ProviderPath, -not $VisibleDesktop)   # the only process this script may ever kill
+$workDir = if ($drive) { Split-Path $target } else { (Get-Location).ProviderPath }
+$savedEnv = @{}
+foreach ($name in $childEnv.Keys) {
+    $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name)
+    [Environment]::SetEnvironmentVariable($name, $childEnv[$name])
+}
+try { $spawnedPid = $sb.Start($exe, (($argList | ForEach-Object { "`"$_`"" }) -join ' '), $workDir, -not $VisibleDesktop) }   # the only process this script may ever kill
+finally { foreach ($name in $savedEnv.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnv[$name]) } }
+if ($drive) {
+    Write-DriveJson 'session.json' ([ordered]@{ pid = $spawnedPid; port = $port; desktop = $result.desktop; script = $target; workDir = $work; localAppData = $localAppData })
+}
 $lines = $sb.Lines
 $deadline = $started.AddSeconds($TimeoutSec)
 
@@ -231,7 +315,7 @@ function Wait-Until([scriptblock] $cond) {
     return (& $cond)
 }
 
-if ($Mode -eq 'Run' -and $Hotkey.Count) {
+if ($Mode -ne 'Validate' -and $Hotkey.Count) {
     $ready = Wait-Until { @($lines.ToArray() | Where-Object { $_ -like 'AHKPROBE|ready|*' }).Count -gt 0 }
     $hwnd = $sb.MainWindow()
     if ($ready -and $hwnd -ne [IntPtr]::Zero) {
@@ -242,7 +326,11 @@ if ($Mode -eq 'Run' -and $Hotkey.Count) {
     }
 }
 
-$null = Wait-Until { $false }
+if ($drive) {
+    while (-not $sb.HasExited() -and -not (Test-Path (Join-Path $EvidenceDir 'stop'))) { Start-Sleep -Milliseconds 100 }
+} else {
+    $null = Wait-Until { $false }
+}
 if (-not $sb.HasExited()) {
     $result.timedOut = $true
     $hwnd = $sb.MainWindow()
@@ -276,14 +364,25 @@ foreach ($line in $lines.ToArray()) {
 }
 
 # A crash while exiting can still leave exit code 0; Windows Error Reporting writes a local dump first.
-$dump = Get-ChildItem "$env:LOCALAPPDATA\CrashDumps" -Filter "*.$spawnedPid.dmp" -ErrorAction SilentlyContinue |
+$dump = Get-ChildItem @("$env:LOCALAPPDATA\CrashDumps"; if ($drive) { "$localAppData\CrashDumps" }) -Filter "*.$spawnedPid.dmp" -ErrorAction SilentlyContinue |
     Where-Object { $_.LastWriteTime -ge $started } | Select-Object -First 1
-Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+if ($drive) {
+    $lost = $null
+    Get-ChildItem (Split-Path $target) -Force | Where-Object { $_.Name -eq 'Logs' -or $_.Extension -eq '.log' } |
+        Copy-Item -Destination $EvidenceDir -Recurse -ErrorAction SilentlyContinue -ErrorVariable lost
+    if ($dump -and $dump.FullName.StartsWith($work)) { $dump = Copy-Item $dump.FullName $EvidenceDir -PassThru }
+    if ($lost) { $result.stderr += "`nApp logs not copied, kept in ${work}: $lost"; $keepWork = $true }
+}
+# WebView2 processes release their profile a moment after the job ends them.
+for ($try = 0; $try -lt 20 -and -not $keepWork -and (Test-Path $work); $try++) {
+    if ($try) { Start-Sleep -Milliseconds 250 }
+    Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 if ($dump) { $result.crashDump = $dump.FullName; Finish 'CRASH' }
 if ($result.timedOut -and -not $result.responsive) { Finish 'HUNG' }
 if ($result.errors.Count -or $result.exitCode -in 2, 3 -or ($result.stderr -and $result.exitCode -ne 0)) { Finish 'ERROR' }
 if (@($result.asserts).Count -or @($result.steps | Where-Object { -not $_.ok }).Count -or $result.exitCode -eq 1) { Finish 'FAIL' }
-if ($result.timedOut -and -not $Persistent) { Finish 'TIMEOUT' }
+if ($result.timedOut -and -not $Persistent -and -not $drive) { Finish 'TIMEOUT' }
 $result.resident = $result.timedOut
 Finish 'PASS'
