@@ -305,8 +305,6 @@ if ($drive) {
     Copy-App $repo $copy
     $target = Join-Path $copy $Script.Substring($repo.Length + 1)
     if (-not (Test-Path $target)) { throw "git ignores the script: $Script" }
-    $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
-    $listener.Start(); $port = $listener.LocalEndpoint.Port; $listener.Stop()
     # WEBVIEW2_USER_DATA_FOLDER does not isolate: the app passes its own folder, built from LOCALAPPDATA.
     $null = New-Item -ItemType Directory -Path $EvidenceDir
     $result.evidence = $EvidenceDir
@@ -323,6 +321,13 @@ if ($drive) {
         if (-not (Test-Path $readyFile) -or $standInBox.HasExited()) { $standInBox.DrainOutput(500); throw "The stand-in did not start: $($standInBox.Stderr())" }
         (Get-Content $readyFile -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $childEnv[$_.Name] = "$($_.Value)" }
     }
+    # After the stand-in, so it is not one of its ports. fetch refuses its "bad ports" (6669, ...); the last is 10080.
+    $port = 0
+    for ($try = 0; -not $port -and $try -lt 50; $try++) {
+        $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, (Get-Random -Minimum 10081 -Maximum 65536))
+        try { $listener.Start(); $port = $listener.LocalEndpoint.Port } catch { } finally { $listener.Stop() }
+    }
+    if (-not $port) { throw 'No free port for the DevTools protocol.' }
     # Last, so a stand-in cannot undo the isolation. AIH_DRIVE tells the app to refuse when it lacks a stand-in.
     $childEnv.LOCALAPPDATA = $localAppData
     $childEnv.AIH_DEVTOOLS_PORT = "$port"
