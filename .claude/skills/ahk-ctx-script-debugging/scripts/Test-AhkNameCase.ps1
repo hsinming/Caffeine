@@ -14,7 +14,8 @@
         class-member-collision       error    a method or property and `this.X :=` differ only by case
         shadowed-name                error    a local variable or parameter has the name of a function or class
                                               that the same scope calls (`map := Map()`), or the scope uses another
-                                              spelling of it as `Name.` or `Name(` (`json := JSON.Dump(x)`)
+                                              spelling of it as `Name.` or `Name(` (`json := JSON.Dump(x)`,
+                                              `(json) => JSON.Load(json)`)
         inconsistent-spelling        warning  one local name is spelled with different case in one scope
         inconsistent-member-spelling warning  one class member is spelled with different case in one class
 
@@ -329,6 +330,25 @@ function Get-NameCaseFindings([string] $file) {
                 }
                 foreach ($m in [regex]::Matches($text, '(?<![\w.%])([A-Za-z_]\w*)\s*\(')) {
                     if (-not $Keywords.Contains($m.Groups[1].Value)) { $vs.calls.Add([pscustomobject]@{ name = $m.Groups[1].Value; line = $lineNo }) }
+                }
+                # An inline fat arrow is its own scope: its parameter hides `Name.` / `Name(` in the arrow's body.
+                foreach ($m in [regex]::Matches($text, '(?:\(([^()]*)\)|(?<![\w.%])([A-Za-z_]\w*))\s*=>')) {
+                    $body = $text.Substring($m.Index + $m.Length)
+                    $nest = 0     # the body ends at the first `,` or closing bracket outside its own brackets
+                    for ($c = 0; $c -lt $body.Length; $c++) {
+                        $ch = $body[$c]
+                        if ('([{'.Contains($ch)) { $nest++ }
+                        elseif (')]}'.Contains($ch) -or $ch -eq ',') { if ($nest -eq 0) { $body = $body.Substring(0, $c); break }; if ($ch -ne ',') { $nest-- } }
+                    }
+                    $params = if ($m.Groups[1].Success) { @(Get-ParamNames $m.Groups[1].Value) } else { @($m.Groups[2].Value) }
+                    foreach ($pn in $params) {
+                        $hit = [regex]::Matches($body, "(?<![\w.%])($([regex]::Escape($pn)))(?=\s*[.(])", 'IgnoreCase') |
+                            Where-Object { $_.Groups[1].Value -cne $pn } | Select-Object -First 1
+                        if ($hit) {
+                            Add-Finding 'shadowed-name' 'error' $lineNo $pn @($pn, $hit.Groups[1].Value) `
+                                "In a fat-arrow function, parameter '$pn' hides '$($hit.Groups[1].Value)': identifiers are case-insensitive, so '$($hit.Groups[1].Value)' is the parameter, not the class or function."
+                        }
+                    }
                 }
             }
             $cls = $null

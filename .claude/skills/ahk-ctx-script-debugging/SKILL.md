@@ -9,7 +9,8 @@ description: >
   one-error-per-run fix loop, and assertions for silent logic bugs. Use for "why won't my hotkey
   fire", "auto-fix this AutoHotkey error", "debug this ahk script", "syntax-check this without
   hanging", pasted AHK error text, "Property is read-only" or two names that differ only by case,
-  or "audit this example with ErrorStdOut". Not for writing a new script from scratch, converting
+  or "audit this example with ErrorStdOut". Also the App Drive core: start a WebView2 app from an
+  isolated copy, operate its page and keep evidence. Not for writing a new script from scratch, converting
   v1 to v2, or conceptual syntax questions when nothing is broken.
 metadata:
   version: "2026.10.16"
@@ -28,6 +29,7 @@ metadata:
 | same error moves, one-error-per-run | `## Step 3 — The fix loop` |
 | compiles but hotkey does nothing, silent logic bug | `## Step 4 — Silent logic bugs` |
 | include/project entry point, multi-file | `### Multi-file projects` |
+| App Drive, operate a real WebView2 app, screenshot its page | `## App Drive` |
 | no PowerShell, Git Bash, MSYS | `## Without PowerShell` |
 
 The AHK v2 interpreter is the only ground truth for whether a script compiles and what a runtime
@@ -43,6 +45,7 @@ Bundled tools, in `scripts/` next to this file:
 | `Invoke-AhkProbe.ps1` | Runner: validate or run on a hidden desktop, timeout, PID-only kill, hotkey firing, hang and crash detection, one JSON verdict |
 | `AhkProbe.ahk` | Probe injected with `/include`: uncaught errors become `AHKPROBE\|error\|{json}` lines; `Assert`, `Expect`, `Step`, `WaitFor`, `Log`, `Mark`, `Done` for test scripts |
 | `Test-AhkNameCase.ps1` | Static check for names that differ only by case (a collision the interpreter does not report at load): one JSON verdict, exit 1 on findings |
+| `AppDrive.mjs` | Operates an app that the runner started with `-Mode Drive`: page evaluate, click, screenshot, stop (Node 22+) |
 | `AhkProbeDialogStubs.ahk` | Optional: `MsgBox`/`InputBox` answered with the safe choice (No, Cancel, Abort, OK) and recorded, no window |
 
 The host supplies the command runner and approval policy. If Windows AHK cannot run in the
@@ -205,6 +208,37 @@ fix back through Steps 1-3.
 AHK v2 resolves a global or function only when the line using it executes, so a module that
 passes Step 1 alone may still throw when its real entry point calls it. A clean check on one
 file proves it parses; run Steps 1-2 on the actual entry-point script as well.
+
+## App Drive
+
+Start the runner in the background; it stays up until `stop`, so `-TimeoutSec` does not apply.
+Then run each step in the foreground:
+
+```powershell
+$e = "C:\proj\drive-results\$(Get-Date -Format yyyyMMdd-HHmmss)"     # new, and ignored by the app's repo
+pwsh -File "<skill>\scripts\Invoke-AhkProbe.ps1" -Mode Drive -Script C:\proj\main.ahk -EvidenceDir $e -OnError continue -StubDialogs   # background
+node "<skill>\scripts\AppDrive.mjs" $e doctor
+node "<skill>\scripts\AppDrive.mjs" $e click '#save'
+node "<skill>\scripts\AppDrive.mjs" $e eval 'document.body.innerText'
+node "<skill>\scripts\AppDrive.mjs" $e screenshot after-save
+node "<skill>\scripts\AppDrive.mjs" $e stop
+```
+
+- **Start every drive with `doctor`** and go on only when it is ok: it waits for the page and proves
+  that the app uses the redirected WebView2 folder and not the user's.
+- The copy holds the working tree with its uncommitted edits, without ignored files and without
+  untracked `settings*.ini*`, `license.cache*` and `.env*`. To drive an older commit, pass the script of a
+  `git worktree` at that commit.
+- The app must open its CDP port from `AIH_DEVTOOLS_PORT` and build its WebView2 folder from
+  `LOCALAPPDATA`. `WEBVIEW2_*` variables do not isolate it.
+- `click` waits up to 5 s for the element to be enabled, still and uncovered, then sends real mouse
+  input. With several pages open, add `--page <part of the URL>`.
+- Every step exits 1 on failure and is added to `steps.jsonl`. The `stop` verdict in `result.json`
+  judges the process (`errors[]`, hang, crash; `resident: false` means the app exited by itself); the steps judge the page. A drive passes when both do.
+- Evidence kept: `steps.jsonl`, `*.png`, the `Logs` folder and `*.log` beside the script, `session.json`, `result.json`.
+  If the runner itself is killed, the app ends with it; the logs stay in `workDir` of `session.json`.
+- The clipboard, the registry, `%APPDATA%`, `%TEMP%` and the network are still the user's. The drive
+  skill of each app must supply stand-ins for outside systems.
 
 ## Without PowerShell
 
