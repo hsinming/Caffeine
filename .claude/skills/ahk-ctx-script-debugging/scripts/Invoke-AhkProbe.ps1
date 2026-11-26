@@ -377,8 +377,12 @@ if ($drive) {
     if (-not $port) { throw 'No free port for the DevTools protocol.' }
     # Last, so a stand-in cannot undo the isolation. AIH_DRIVE tells the app to refuse when it lacks a stand-in.
     $childEnv.LOCALAPPDATA = $localAppData
-    $childEnv.AIH_DEVTOOLS_PORT = "$port"
+    # A Live Drive on a hospital system opens no DevTools port: the agent could read the page (Invoke-LiveDrive.ps1).
+    if ($env:APPDRIVE_LIVE_HOSPITAL) { $port = $null }
+    $childEnv.AIH_DEVTOOLS_PORT = if ($port) { "$port" }
     $childEnv.AIH_DRIVE = 'synthetic'
+    # Credentials of a Live Drive are for its stand-in alone, never the app.
+    Get-ChildItem env:APPDRIVE_SECRET_* | ForEach-Object { $childEnv[$_.Name] = $null }
 }
 $argList += $target
 

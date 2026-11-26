@@ -256,6 +256,14 @@ node "<skill>\scripts\AppDrive.mjs" $e stop
   must find. When all is up it writes the ready file (write, then rename): a JSON object of environment
   variables for the app. It ends with the drive; if it ends earlier, the drive fails. Its output is `stand-in.log`.
 - The app sees `AIH_DRIVE=synthetic` in every drive: it must refuse to start when a stand-in is missing.
+- **Live Drive** (a real system, ADR 0002 of ahk-home-repo): run `scripts\Invoke-LiveDrive.ps1 -System <s> -Feature <f>`
+  alone in one command, with the app repo as working folder (`pwsh -WorkingDirectory <repo> -File …`). The
+  `PreToolUse` hook `scripts\LiveDriveHook.mjs` asks for that one run and leaves a single-use marker; without it the
+  command refuses (exit 6). The app's `tools\drive\live.json` names its systems, features and credentials, and the
+  runner it starts as `node <runner> <feature> --live <system>`. The stand-in of that system forwards to it, holding the
+  credential the app never sees. A hospital system opens no DevTools port, and the agent gets only masked steps
+  (name, ok, ms, length, code). Each step name must be a quoted string in the runner, so write every one out. Its
+  evidence goes to `live-results\`, which is for the user alone.
 
 ## Without PowerShell
 
