@@ -1,7 +1,7 @@
 # Module_ScreenCoordinates.md
 <!-- DOMAIN: Screen coordinates, monitors, DPI -->
 <!-- SCOPE: CoordMode (all target types), A_ScreenWidth/Height/DPI, MonitorGet/MonitorGetWorkArea/MonitorGetCount/MonitorGetPrimary/MonitorGetName, virtual-desktop bounds, finding the monitor under the cursor, centering windows, resolution-independent (scaled / fractional) coordinates. Not covered: pixel/image search (Module_PixelAndImageSearch.md), overlays (Module_ScreenOverlays.md), Click/MouseMove details (Module_SendAndInputHook.md), Gui DPI scaling (Module_GuiLayout.md). -->
-<!-- TRIGGERS: CoordMode(), A_ScreenWidth, A_ScreenHeight, A_ScreenDPI, MonitorGet(), MonitorGetWorkArea(), MonitorGetCount(), MonitorGetPrimary(), SysGet(78), "screen coordinates", "multi-monitor", "second monitor", "screen resolution", "work area", "taskbar", "DPI scaling", "center window on monitor", "which monitor" -->
+<!-- TRIGGERS: CoordMode(), A_ScreenWidth, A_ScreenHeight, A_ScreenDPI, MonitorGet(), MonitorGetWorkArea(), MonitorGetCount(), MonitorGetPrimary(), SysGet(78), "screen coordinates", "multi-monitor", "second monitor", "screen resolution", "work area", "taskbar", "DPI scaling", "mixed scaling", SetThreadDpiAwarenessContext, "per-monitor", "center window on monitor", "which monitor" -->
 <!-- CONSTRAINTS: Default CoordMode is the active window's client area for every target type. CoordMode is per thread (each hotkey/timer/GUI thread starts with the default) but a function call does NOT reset it. A_ScreenWidth/Height are the primary monitor only. MonitorGet's N is 1-based; omit it for the primary monitor. -->
 <!-- CROSS-REF: Module_PixelAndImageSearch.md, Module_ScreenOverlays.md, Module_SendAndInputHook.md, Module_WindowManagement.md, Module_GuiLayout.md -->
 <!-- VERSION: AHK v2.0+ -->
@@ -44,6 +44,9 @@ Check generated code against every rule before output. ✗ marks a common wrong 
   ✗ `ImageSearch(…, 0, 0, A_ScreenWidth, A_ScreenHeight, …)` on monitor 2 → ✓ `MonitorGet(2, &l, &t, &r, &b)`
   ✗ `if x < 0` treated as off-screen → ✓ check against monitor bounds
 - `A_ScreenDPI` does not change when the user changes scaling while the script runs and does not describe secondary monitors.
+- **Monitors with different scaling: run screen capture and selection overlays per-monitor v2.** AHK is system-DPI aware, so Windows rescales its coordinates on a monitor scaled differently from the primary, and whether it rescales depends on the window involved: one script read a 1.5x cursor position in a hotkey and the physical one inside its own full-screen overlay. ImagePut's `{Window: hwnd}` (PrintWindow) and screen captures, and per-monitor-aware apps' windows, use physical pixels. Wrap the whole operation (`MouseGetPos`, `ControlGetPos`/`WinGetClientPos` for a crop, Gui creation, the capture) in `prev := DllCall("SetThreadDpiAwarenessContext", "Ptr", -4, "Ptr")`, restore `prev` in `finally`, and give its Guis `-DPIScale`.
+  ✗ crop from system-aware `ControlGetPos` applied to a `{Window: hwnd}` bitmap → ✓ read the positions per-monitor v2
+- `GetDpiForMonitor` returns the system DPI to a system-aware caller; call it per-monitor v2 for a monitor's own DPI.
 
 ## RUNTIME ERROR MAPPING
 
@@ -52,6 +55,8 @@ Check generated code against every rule before output. ✗ marks a common wrong 
 | Clicks/searches offset by the window position | Default client-relative CoordMode | `CoordMode("Mouse"/"Pixel", "Screen")` in that thread |
 | Exception from `MonitorGet` | N out of range | Loop `MonitorGetCount()` |
 | Wrong area on monitor 2 | Using `A_ScreenWidth/Height` | `MonitorGet(2, …)` |
+| Crop off target, or the whole window uncropped, on a monitor scaled unlike the primary | System-aware positions against a physical-pixel capture | Per-monitor v2 for the positions |
+| Selection box larger than the drag, or drifting from the mouse | Gui DPI scaling and system-aware rescaling | Per-monitor v2 and `-DPIScale` |
 
 ## TIER 1 — CoordMode and Primary Screen
 
