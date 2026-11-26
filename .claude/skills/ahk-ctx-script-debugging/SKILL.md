@@ -13,7 +13,7 @@ description: >
   isolated copy, operate its page and keep evidence. Not for writing a new script from scratch, converting
   v1 to v2, or conceptual syntax questions when nothing is broken.
 metadata:
-  version: "2026.10.16"
+  version: "2026.11.26"
 ---
 
 # Debugging AutoHotkey v2 Scripts
@@ -45,6 +45,7 @@ Bundled tools, in `scripts/` next to this file:
 | `Invoke-AhkProbe.ps1` | Runner: validate or run on a hidden desktop, timeout, PID-only kill, hotkey firing, hang and crash detection, one JSON verdict |
 | `AhkProbe.ahk` | Probe injected with `/include`: uncaught errors become `AHKPROBE\|error\|{json}` lines; `Assert`, `Expect`, `Step`, `WaitFor`, `Log`, `Mark`, `Done` for test scripts |
 | `Test-AhkNameCase.ps1` | Static check for names that differ only by case (a collision the interpreter does not report at load): one JSON verdict, exit 1 on findings |
+| `AhkProbeInput.ahk`, `AhkProbeIsolation.ahk` | Drive only: the keyboard and active window of a drive, and the check that it is isolated from the user |
 | `AppDrive.mjs` | Operates an app that the runner started with `-Mode Drive`: page evaluate, click, screenshot, stop (Node 22+) |
 | `AhkProbeDialogStubs.ahk` | Optional: `MsgBox`/`InputBox` answered with the safe choice (No, Cancel, Abort, OK) and recorded, no window |
 
@@ -237,7 +238,18 @@ node "<skill>\scripts\AppDrive.mjs" $e stop
   judges the process (`errors[]`, hang, crash; `resident: false` means the app exited by itself); the steps judge the page. A drive passes when both do.
 - Evidence kept: `steps.jsonl`, `*.png`, the `Logs` folder and `*.log` beside the script, `session.json`, `result.json`.
   If the runner itself is killed, the app ends with it; the logs stay in `workDir` of `session.json`.
-- The clipboard, the registry, `%APPDATA%`, `%TEMP%` and the network are still the user's. The drive
+- **Isolation**: a drive runs in a window station of its own, so it has its own clipboard, and Windows refuses its
+  key input, hotkey registration and cursor changes. `AhkProbeIsolation.ahk` proves the first two before anything else runs
+  there (`isolation` in `session.json` and `result.json`); a drive that is not isolated does not start. `isolation.userClipboard`
+  holds sequence numbers of the user's clipboard, never its content: all equal means it did not change.
+  Creating the station needs an elevated shell.
+- **Keys and active window**: a station without a user has neither, so `AhkProbeInput.ahk` supplies them inside the app.
+  Send the registered message `AppDriveForeground` (wParam: the window) to the app's main window from a process of the stand-in:
+  that window is then the active one. `Send` hands `^c`, `^v` and `^a` to its focused control and throws on any other key;
+  each is in `logs` of `result.json`. Fire a hotkey by posting `WM_HOTKEY` with its index to the main window.
+  `IsWindowVisible` is false for every window outside the app's own process: test `WS_VISIBLE` instead. So an AutoHotkey
+  stand-in must hold its `Gui` in a variable: AutoHotkey destroys a Gui nothing refers to unless it is visible.
+- The registry, `%APPDATA%`, `%TEMP%` and the network are still the user's. The drive
   skill of each app must supply stand-ins for outside systems.
 - **Stand-ins**: `-StandIn C:\proj\tools\stand-ins.mjs` runs that script of the copy with Node, on the drive's desktop and before the app,
   as `node <script> <app copy> <ready file>`. It may seed invented files in the copy and open windows the app
