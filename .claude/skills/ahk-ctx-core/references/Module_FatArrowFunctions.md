@@ -50,6 +50,8 @@ Check generated code against every rule before output. ✗ marks a common wrong 
   ✗ `{increment: () => ++count}` then `c.increment()` throws (too many arguments) → ✓ `{increment: (this) => ++count}`
 - **Captured variables are shared.** A fat arrow inside a function that refers to outer locals is a closure; it sees the variable's current value at call time. Closures created in one call (for example inside a loop) share the same variables.
   ✗ Lambdas created in one loop each "remember" a different `i` → ✓ create each lambda in a separate factory call
+- **A closure cannot read a `for` loop variable.** Inside the loop or after it, the closure sees the variable as unset and throws UnsetError (tested on v2.0.30, with `for v` and `for k, v`). Copy the value to an ordinary local first; the closure reads the copy.
+  ✗ `for opt in opts` then `() => Gui(opt)` → ✓ `local guiOpt := opt` then `() => Gui(guiOpt)`
 - **Getter-only fat-arrow properties are read-only.** If no setter is defined or inherited, assigning to the property throws. Use `Prop { get => ... set => ... }` or `set { ... }` for write access.
   ✗ `obj.version := "3.0"` with `version => expr` → ✓ `version { get => ... set => ... }`
 - **Self-reference.** Inside a function, `f := (n) => ... f(n - 1)` captures `f` and creates a reference cycle (closure → `f` → closure). Use the named form `f := F(n) => ... F(n - 1)`.
@@ -61,6 +63,7 @@ Check generated code against every rule before output. ✗ marks a common wrong 
 | Load-time error | `=> {` used as a block body | Use a single expression or a named function |
 | `Error` (too many parameters) | Lambda in an object property called as `obj.prop()` without a leading `this` parameter | Add `(this, ...)` or use `obj.prop.Call()` |
 | `PropertyError` / `Error` | Assigning to a getter-only property | Add a setter |
+| `UnsetError` ("This local variable has not been assigned a value") | A closure reads a `for` loop variable | Copy the loop variable to a local before the closure |
 
 ## TIER 1 — Basic Arrow Function Syntax
 > METHODS COVERED: `=>` one-parameter · several-parameter · no-parameter forms
