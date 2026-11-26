@@ -17,6 +17,8 @@
     The target runs on a private Win32 desktop inside a kill-on-close Job Object: no window reaches the
     user's screen, no focus is stolen, and a hotkey or #SingleInstance in the target cannot touch the
     user's own running copy. A dialog the target opens stays on that desktop and is listed in "windows".
+    A Drive also gets a window station of its own, so a clipboard of its own and no way to send keys to the
+    user. AhkProbeIsolation.ahk proves both there first; a drive that is not isolated does not start.
     -VisibleDesktop runs on the user's desktop instead.
 
     Verdicts, worst first, and exit codes:
@@ -79,29 +81,45 @@ public sealed class AhkProbeSandbox : IDisposable {
     [DllImport("kernel32.dll")] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr proc);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr CreateDesktopW(string name, IntPtr dev, IntPtr dm, uint flags, uint access, IntPtr sa);
     [DllImport("user32.dll")] static extern bool CloseDesktop(IntPtr h);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr CreateWindowStationW(string name, uint flags, uint access, IntPtr sa);
+    [DllImport("user32.dll")] static extern bool CloseWindowStation(IntPtr h);
+    [DllImport("user32.dll")] static extern IntPtr GetProcessWindowStation();
+    [DllImport("user32.dll", SetLastError = true)] static extern bool SetProcessWindowStation(IntPtr h);
+    [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
     [DllImport("user32.dll")] static extern bool EnumDesktopWindows(IntPtr desk, EnumProc cb, IntPtr l);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassNameW(IntPtr h, StringBuilder s, int n);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowTextW(IntPtr h, StringBuilder s, int n);
-    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] static extern int GetWindowLongW(IntPtr h, int index);
     [DllImport("user32.dll")] static extern bool PostMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] static extern IntPtr SendMessageTimeoutW(IntPtr h, uint m, IntPtr w, IntPtr l, uint f, uint ms, out IntPtr r);
 
-    IntPtr hDesk, hJob, hProc; string desktop; bool guest; Thread outThread, errThread;
+    IntPtr hDesk, hJob, hProc, hStation; string desktop; bool guest; Thread outThread, errThread;
     readonly StringBuilder err = new StringBuilder();
     public readonly ConcurrentQueue<string> Lines = new ConcurrentQueue<string>();
-    public int Pid;
+    public int Pid; public string Station;
 
     // host: start on that sandbox's desktop and in its job; the host must be disposed last.
-    public int Start(string exe, string args, string workDir, bool hidden, AhkProbeSandbox host) {
+    // station: the desktop is in a window station of its own, which has its own clipboard and never any keyboard input.
+    public int Start(string exe, string args, string workDir, bool hidden, AhkProbeSandbox host, bool station) {
         if (host != null) { guest = true; hDesk = host.hDesk; hJob = host.hJob; desktop = host.desktop; }
-        else Isolate(hidden);
+        else Isolate(hidden, station);
         return Launch(exe, args, workDir);
     }
 
-    void Isolate(bool hidden) {
-        if (hidden) {
-            string name = "ahkprobe-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+    void Isolate(bool hidden, bool station) {
+        string name = "ahkprobe-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+        if (station) {
+            hStation = CreateWindowStationW(name, 0, 0x10000000, IntPtr.Zero);                     // GENERIC_ALL
+            if (hStation == IntPtr.Zero) throw new InvalidOperationException("CreateWindowStation failed (it needs an elevated shell): " + Marshal.GetLastWin32Error());
+            IntPtr own = GetProcessWindowStation();
+            if (!SetProcessWindowStation(hStation)) throw new InvalidOperationException("SetProcessWindowStation failed: " + Marshal.GetLastWin32Error());
+            int error;
+            try { hDesk = CreateDesktopW("drive", IntPtr.Zero, IntPtr.Zero, 0, 0x10000000, IntPtr.Zero); error = Marshal.GetLastWin32Error(); }
+            finally { SetProcessWindowStation(own); }
+            if (hDesk == IntPtr.Zero) throw new InvalidOperationException("CreateDesktop failed: " + error);
+            Station = name; desktop = name + "\\drive";
+        } else if (hidden) {
             hDesk = CreateDesktopW(name, IntPtr.Zero, IntPtr.Zero, 0, 0x10000000, IntPtr.Zero);   // GENERIC_ALL
             if (hDesk == IntPtr.Zero) throw new InvalidOperationException("CreateDesktop failed: " + Marshal.GetLastWin32Error());
             desktop = "WinSta0\\" + name;
@@ -164,7 +182,7 @@ public sealed class AhkProbeSandbox : IDisposable {
         var list = new List<string>(); int pid = Pid;
         Each((h, l) => {
             uint owner; GetWindowThreadProcessId(h, out owner);
-            if (owner != (uint)pid || !IsWindowVisible(h)) return true;
+            if (owner != (uint)pid || (GetWindowLongW(h, -16) & 0x10000000) == 0) return true;   // IsWindowVisible is false for all in a station of our own
             var c = new StringBuilder(128); GetClassNameW(h, c, 128);
             var t = new StringBuilder(256); GetWindowTextW(h, t, 256);
             list.Add(c + "|" + t); return true;
@@ -180,6 +198,7 @@ public sealed class AhkProbeSandbox : IDisposable {
         if (hJob != IntPtr.Zero) { CloseHandle(hJob); hJob = IntPtr.Zero; }      // kill-on-close ends any child the target started
         if (hProc != IntPtr.Zero) { CloseHandle(hProc); hProc = IntPtr.Zero; }
         if (hDesk != IntPtr.Zero) { CloseDesktop(hDesk); hDesk = IntPtr.Zero; }
+        if (hStation != IntPtr.Zero) { CloseWindowStation(hStation); hStation = IntPtr.Zero; }
     }
 }
 '@
@@ -196,12 +215,13 @@ function Find-AhkExe {
 
 $Script = (Resolve-Path $Script).Path
 $drive = $Mode -eq 'Drive'
-$sb = $standInBox = $spawnedPid = $work = $result = $null
+$sb = $standInBox = $station = $spawnedPid = $work = $result = $null
 # A drive that fails on the way leaves no app and no unused copy, and tells AppDrive.mjs why.
 trap {
     if ($drive) {
         if ($sb) { $sb.Dispose() }
         if ($standInBox) { Stop-StandIn }
+        if ($station) { $station.Dispose() }
         if ($work -and -not $spawnedPid) { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
         if ($result.evidence) { $result.stderr = "$_"; Finish 'ERROR' }
     }
@@ -233,7 +253,7 @@ function Write-DriveJson([string] $name, $data) {
     [IO.File]::Move("$path.tmp", $path)
 }
 
-# The job ends the stand-in and everything it started; its output is kept as evidence.
+# Its output is kept as evidence. The job ends what it started.
 function Stop-StandIn {
     if (-not $standInBox.HasExited()) { $standInBox.Kill() }
     $standInBox.DrainOutput(2000)
@@ -281,6 +301,30 @@ function Copy-App([string] $from, [string] $to) {
     }
 }
 
+# Runs AhkProbeIsolation.ahk in the drive's window station, before anything else there. Only its sequence number is read
+# of the user's clipboard: it must not move while the station's own clipboard is written. The user may copy meanwhile: try again.
+function Assert-Isolation {
+    for ($try = 0; $try -lt 3; $try++) {
+        $before = [AhkProbeSandbox]::GetClipboardSequenceNumber()
+        $check = $station
+        if ($try) { $check = [AhkProbeSandbox]::new() }
+        $null = $check.Start($exe, "/ErrorStdOut `"$probeDir\AhkProbeIsolation.ahk`"", $probeDir, $true, $(if ($try) { $station }), $true)
+        if (-not $check.WaitExit(15000)) { $check.Kill() }
+        $check.DrainOutput(2000)
+        $found = "$($check.Lines.ToArray())$($check.Stderr())".Trim()
+        $isolated = "station=$($station.Station) interactive=0 sendInput=0 error=5 clipboard=own"
+        if ($try) { $check.Dispose() }
+        $after = [AhkProbeSandbox]::GetClipboardSequenceNumber()
+        $result.isolation = [ordered]@{ found = $found; userClipboard = @($before, $after) }    # sequence numbers
+        if ($found -ne $isolated) { break }
+        if ($before -eq $after) { $result.isolation.userClipboard = @($before); return }
+    }
+    if ($found -eq $isolated) {   # isolated each time; only the user kept copying
+        throw "The user's clipboard changed during each of 3 isolation checks (sequence $before to $after): run again"
+    }
+    throw "The drive is not isolated from the user: $found, user clipboard sequence $before to $after"
+}
+
 $probeDir = $PSScriptRoot
 $keepWork = $false
 $work = Join-Path ([IO.Path]::GetTempPath()) ("ahkprobe-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -291,6 +335,7 @@ if ($Mode -eq 'Validate') {
 } else {
     # AutoHotkey honours exactly one /include, so merge everything into one prelude.
     $prelude = @('#Requires AutoHotkey v2.0', '#Warn All, StdOut', "#Include `"$probeDir\AhkProbe.ahk`"")
+    if ($drive) { $prelude += "#Include `"$probeDir\AhkProbeInput.ahk`"" }
     if ($StubDialogs) { $prelude += "#Include `"$probeDir\AhkProbeDialogStubs.ahk`"" }
     $preludePath = Join-Path $work 'prelude.ahk'
     [IO.File]::WriteAllText($preludePath, ($prelude -join "`r`n") + "`r`n", [Text.UTF8Encoding]::new($true))
@@ -308,13 +353,15 @@ if ($drive) {
     # WEBVIEW2_USER_DATA_FOLDER does not isolate: the app passes its own folder, built from LOCALAPPDATA.
     $null = New-Item -ItemType Directory -Path $EvidenceDir
     $result.evidence = $EvidenceDir
+    $station = [AhkProbeSandbox]::new()
+    Assert-Isolation
     if ($StandIn) {
         $standInScript = Join-Path $copy $StandIn.Substring($repo.Length + 1)
         if (-not (Test-Path $standInScript)) { throw "git ignores the stand-in: $StandIn" }
         $readyFile = Join-Path $work 'stand-in.json'
         $node = (Get-Command node -CommandType Application | Select-Object -First 1).Source
         $box = [AhkProbeSandbox]::new()
-        $null = $box.Start($node, "`"$standInScript`" `"$copy`" `"$readyFile`"", $copy, $true, $null)
+        $null = $box.Start($node, "`"$standInScript`" `"$copy`" `"$readyFile`"", $copy, $true, $station, $true)
         $standInBox = $box
         $end = (Get-Date).AddSeconds(30)
         while (-not (Test-Path $readyFile) -and -not $standInBox.HasExited() -and (Get-Date) -lt $end) { Start-Sleep -Milliseconds 50 }
@@ -344,10 +391,10 @@ foreach ($name in $childEnv.Keys) {
     $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name)
     [Environment]::SetEnvironmentVariable($name, $childEnv[$name])
 }
-try { $spawnedPid = $sb.Start($exe, (($argList | ForEach-Object { "`"$_`"" }) -join ' '), $workDir, -not $VisibleDesktop, $standInBox) }   # the only process this script may ever kill
+try { $spawnedPid = $sb.Start($exe, (($argList | ForEach-Object { "`"$_`"" }) -join ' '), $workDir, -not $VisibleDesktop, $station, $drive) }   # the only process this script may ever kill
 finally { foreach ($name in $savedEnv.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnv[$name]) } }
 if ($drive) {
-    Write-DriveJson 'session.json' ([ordered]@{ pid = $spawnedPid; port = $port; desktop = $result.desktop; script = $target; workDir = $work; localAppData = $localAppData })
+    Write-DriveJson 'session.json' ([ordered]@{ pid = $spawnedPid; port = $port; desktop = $result.desktop; script = $target; workDir = $work; localAppData = $localAppData; isolation = $result.isolation.found })
 }
 $lines = $sb.Lines
 $deadline = $started.AddSeconds($TimeoutSec)
@@ -392,6 +439,10 @@ $result.exitCode = if ($result.timedOut) { $null } else { $sb.ExitCode() }
 $result.stderr = $sb.Stderr().Trim()
 $sb.Dispose()
 if ($standInBox) { Stop-StandIn }
+if ($station) {
+    $station.Dispose()
+    $result.isolation.userClipboard += [AhkProbeSandbox]::GetClipboardSequenceNumber()
+}
 if ($standInEnded) { $result.stderr += "`nThe stand-in ended before the drive; see stand-in.log." }
 
 foreach ($line in $lines.ToArray()) {
